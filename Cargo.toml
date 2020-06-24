@@ -1,0 +1,12 @@
+[package]
+name = "loopfisch"
+version = "0.1.0"
+authors = ["Florian Jung <flo@windfisch.org>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+jack = "0.6"
+lockfree = "0.5.1"
+assert_no_alloc = { git = "https://github.com/Windfisch/rust-assert-no-alloc" }
