@@ -8,5 +8,6 @@ edition = "2018"
 
 [dependencies]
 jack = "0.6"
-lockfree = "0.5.1"
 assert_no_alloc = { git = "https://github.com/Windfisch/rust-assert-no-alloc" }
+ringbuf = "0.2.1"
+intrusive-collections = "0.9.0"
