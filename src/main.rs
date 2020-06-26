@@ -273,7 +273,7 @@ impl Take {
 					val = channel_buffer.next(|v|*v);
 				}
 				if let Some(v) = val {
-					*d = v;
+					*d += v;
 				}
 				else {
 					panic!();
@@ -419,7 +419,7 @@ impl AudioThreadState {
 		let song_wraps = self.song_length <= song_position_after;
 		let song_wraps_at = min(self.song_length - song_position, scope.n_frames()) as usize;
 		
-		print!("\rprocess @ {:5.1}% {:2x} {} -- {}", (song_position as f32 / self.song_length as f32) * 100.0, 256*song_position / self.song_length, song_position, song_position_after);
+		print!("\rprocess @ {:5.1}% {:2x} {} {} -- {}", (song_position as f32 / self.song_length as f32) * 100.0, 256*song_position / self.song_length, 8 * song_position / self.song_length, song_position, song_position_after);
 
 		use std::io::Write;
 		std::io::stdout().flush().unwrap();
@@ -430,6 +430,10 @@ impl AudioThreadState {
 				Some(take) => { println!("\ngot take"); self.takes.push_back(take); }
 				None => { break; }
 			}
+		}
+
+		for dev in self.devices.iter_mut() {
+			play_silence(client,scope,dev,0..scope.n_frames() as usize);
 		}
 		
 		// then, handle all playing takes
@@ -447,13 +451,8 @@ impl AudioThreadState {
 					println!("\nAlmost finished recording on device {}, thus starting playback now", t.dev_id);
 					t.rewind();
 					let dev_id = t.dev_id;
-					play_silence(client,scope,&mut self.devices[dev_id], 0..song_wraps_at);
 					t.playback(client,scope,&mut self.devices[dev_id], song_wraps_at..scope.n_frames() as usize);
 				}
-			}
-			else {
-				let dev_id = t.dev_id;
-				play_silence(client,scope,&mut self.devices[dev_id], 0..scope.n_frames() as usize);
 			}
 
 			cursor.move_next();
@@ -529,9 +528,11 @@ fn main() {
 	active_client.as_client().connect_ports_by_name("loopfisch:fnord_out2", "system:playback_2").unwrap();
 	active_client.as_client().connect_ports_by_name("system:capture_1", "loopfisch:fnord_in1").unwrap();
 	active_client.as_client().connect_ports_by_name("system:capture_2", "loopfisch:fnord_in2").unwrap();
+	
 	std::thread::sleep_ms(1000);
-
-
+	println!("adding take");
+	frontend_thread_state.add_take(0);
+	std::thread::sleep_ms(4000);
 	println!("adding take");
 	frontend_thread_state.add_take(0);
 
