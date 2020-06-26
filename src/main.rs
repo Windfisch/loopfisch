@@ -45,6 +45,8 @@ mod outsourced_allocation_buffer {
 			self.thread_handle.thread().unpark();
 		}
 	}
+
+	unsafe impl<T: Send> Send for Buffer<T> {}
 	
 	impl<T: 'static + Send> Buffer<T> {
 		/// Create a new buffer and launch the associated helper thread.
@@ -100,7 +102,7 @@ mod outsourced_allocation_buffer {
 
 			Buffer {
 				fragments: list,
-				remaining_threshold: capacity_increment/2,
+				remaining_threshold,
 				request_pending: false,
 				incoming_fragment_ringbuf: incoming_consumer,
 				new_fragment_request_ringbuf: request_producer,
@@ -201,14 +203,7 @@ mod outsourced_allocation_buffer {
 	}
 }
 
-
-
-struct Take {
-	samples: Vec<Vec<f32>>,
-	record_state: RecordState,
-	dev_id: u32,
-	unmuted: bool
-}
+use outsourced_allocation_buffer::Buffer;
 
 struct AudioChannel {
 	in_port: jack::Port<jack::AudioIn>,
@@ -217,15 +212,28 @@ struct AudioChannel {
 
 impl AudioChannel {
 	fn new(client: &jack::Client, name: &str, num: u32) -> Result<AudioChannel, jack::Error> {
-		return Ok( AudioChannel {
-			in_port: client.register_port(&format!("{}_in{}", name, num), jack::AudioIn::default())?,
-			out_port: client.register_port(&format!("{}_out{}", name, num), jack::AudioOut::default())?
-		});
+		let in_port = client.register_port(&format!("{}_in{}", name, num), jack::AudioIn::default())?;
+		let out_port = client.register_port(&format!("{}_out{}", name, num), jack::AudioOut::default())?;
+		//client.connect_ports(&in_port, &client.port_by_name(&format!("system:capture_{}", num)).expect("could not find port")).expect("could not connect capture port");
+		//client.connect_ports(&out_port, &client.port_by_name(&format!("system:playback_{}", num)).expect("could not find port")).expect("could not connect playback port");
+		return Ok( AudioChannel { in_port, out_port });
 	}
 }
 
 struct AudioDevice {
 	pub channels: Vec<AudioChannel>
+}
+
+impl AudioDevice {
+	fn info(&self) -> AudioDeviceInfo {
+		return AudioDeviceInfo {
+			n_channels: self.channels.len()
+		};
+	}
+}
+
+struct AudioDeviceInfo {
+	pub n_channels: usize
 }
 
 impl AudioDevice {
@@ -244,32 +252,124 @@ enum RecordState {
 	Finished
 }
 
+use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListLink};
+
+struct Take {
+	samples: Vec<Buffer<f32>>,
+	record_state: RecordState,
+	dev_id: usize,
+	unmuted: bool,
+	playing: bool
+}
+
+impl Take {
+	pub fn playback(&mut self, client: &jack::Client, scope: &jack::ProcessScope, device: &mut AudioDevice, range: std::ops::Range<usize>) {
+		for (channel_buffer, channel_ports) in self.samples.iter_mut().zip(device.channels.iter_mut()) {
+			let buffer = &mut channel_ports.out_port.as_mut_slice(scope)[range.clone()];
+			for d in buffer {
+				let mut val = channel_buffer.next(|v|*v);
+				if val.is_none() {
+					channel_buffer.rewind();
+					val = channel_buffer.next(|v|*v);
+				}
+				if let Some(v) = val {
+					*d = v;
+				}
+				else {
+					panic!();
+					unreachable!();
+				}
+			}
+		}
+	}
+
+	pub fn rewind(&mut self) {
+		for channel_buffer in self.samples.iter_mut() {
+			channel_buffer.rewind();
+		}
+	}
+
+	pub fn record(&mut self, client: &jack::Client, scope: &jack::ProcessScope, device: &AudioDevice, range: std::ops::Range<usize>) {
+		for (channel_buffer, channel_ports) in self.samples.iter_mut().zip(device.channels.iter()) {
+			let data = &channel_ports.in_port.as_slice(scope)[range.clone()];
+			for d in data {
+				channel_buffer.push(*d);
+			}
+		}
+	}
+}
+
+fn play_silence(client: &jack::Client, scope: &jack::ProcessScope, device: &mut AudioDevice, range: std::ops::Range<usize>) {
+	for channel_ports in device.channels.iter_mut() {
+		let buffer = &mut channel_ports.out_port.as_mut_slice(scope)[range.clone()];
+		for d in buffer {
+			*d = 0.0;
+		}
+	}
+}
+
+
+use std::cell::RefCell;
+
+struct TakeNode {
+	take: RefCell<Take>,
+	link: LinkedListLink
+}
+
+impl TakeNode {
+	fn new(take: Take) -> TakeNode {
+		TakeNode {
+			take: RefCell::new(take),
+			link: LinkedListLink::new()
+		}
+	}
+}
+
+intrusive_adapter!(TakeAdapter = Box<TakeNode>: TakeNode { link: LinkedListLink });
+
 struct AudioThreadState {
 	devices: Vec<AudioDevice>,
-	//takes: Vec<ArmedTake>,
-	//new_take_channel: lockfree::channel::spsc::Receiver<ArmedTake>,
+	takes: LinkedList<TakeAdapter>,
+	new_take_channel: ringbuf::Consumer<Box<TakeNode>>,
 	song_position: u32,
 	song_length: u32,
 }
 
-/*struct FrontendThreadState {
-	new_take_channel: lockfree::channel::spsc::Sender<ArmedTake>
+struct FrontendThreadState {
+	new_take_channel: ringbuf::Producer<Box<TakeNode>>,
+	device_info: Vec<AudioDeviceInfo>
+}
+
+impl FrontendThreadState {
+	fn add_take(&mut self, dev_id: usize) {
+		let n_channels = self.device_info[dev_id].n_channels;
+		let take = Take {
+			samples: (0..n_channels).map(|_| Buffer::new(1024*8,512*8)).collect(),
+			record_state: RecordState::Waiting,
+			dev_id,
+			unmuted: true,
+			playing: false
+		};
+		let take_node = Box::new(TakeNode::new(take));
+		self.new_take_channel.push(take_node);
+	}
 }
 
 fn create_thread_states(devices: Vec<AudioDevice>, song_length: u32) -> (AudioThreadState, FrontendThreadState) {
-	let (take_sender, take_receiver) = lockfree::channel::spsc::create();
+	let (take_sender, take_receiver) = ringbuf::RingBuffer::<Box<TakeNode>>::new(10).split();
 	
-	let audio_thread_state = AudioThreadState {
-		devices,
-		armed_takes: Vec::new(), // TODO should have a capacity
-		playable_takes: Vec::new(), // TODO should have a capacity
-		new_take_channel: take_receiver,
-		song_position: 0,
-		song_length
-	};
 
 	let frontend_thread_state = FrontendThreadState {
 		new_take_channel: take_sender,
+		device_info: devices.iter().map(|d| d.info()).collect()
+	};
+
+	let audio_thread_state = AudioThreadState {
+		devices,
+		takes: LinkedList::<TakeAdapter>::new(TakeAdapter::new()),
+		new_take_channel: take_receiver,
+		song_position: 0,
+		song_length
 	};
 
 	return (audio_thread_state, frontend_thread_state);
@@ -308,55 +408,90 @@ fn remove_unordered_iter<T,F: FnMut(&mut T) -> bool>(vec: &mut Vec<T>, filter: F
 
 impl AudioThreadState {
 	fn process_callback(&mut self, client: &jack::Client, scope: &jack::ProcessScope) -> jack::Control {
-		use lockfree::channel::spsc::*;
 		use RecordState::*;
+		assert_no_alloc(||{
+
 
 		assert!(scope.n_frames() < self.song_length);
 
-		let song_position_after = self.song_position + scope.n_frames();
-		let song_wraps = self.song_length < song_position_after;
-		let song_wraps_at = min(self.song_length - self.song_position, scope.n_frames()) as usize;
+		let song_position = self.song_position;
+		let song_position_after = song_position + scope.n_frames();
+		let song_wraps = self.song_length <= song_position_after;
+		let song_wraps_at = min(self.song_length - song_position, scope.n_frames()) as usize;
+		
+		print!("\rprocess @ {:5.1}% {:2x} {} -- {}", (song_position as f32 / self.song_length as f32) * 100.0, 256*song_position / self.song_length, song_position, song_position_after);
+
+		use std::io::Write;
+		std::io::stdout().flush().unwrap();
 
 		// first, handle the take channel
 		loop {
-			match self.new_take_channel.recv() {
-				Ok(armed_take) => { self.armed_takes.push(armed_take); }
-				Err(RecvErr::NoMessage) | Err(RecvErr::NoSender) => { break; }
+			match self.new_take_channel.pop() {
+				Some(take) => { println!("\ngot take"); self.takes.push_back(take); }
+				None => { break; }
 			}
 		}
+		
+		// then, handle all playing takes
+		let mut cursor = self.takes.front();
+		while let Some(node) = cursor.get() {
+			let mut t = node.take.borrow_mut();
+			
+			if t.playing {
+				let dev_id = t.dev_id;
+				t.playback(client,scope,&mut self.devices[dev_id], 0..scope.n_frames() as usize);
+			}
+			else if t.record_state == Recording {
+				if song_wraps {
+					t.playing = true;
+					println!("\nAlmost finished recording on device {}, thus starting playback now", t.dev_id);
+					t.rewind();
+					let dev_id = t.dev_id;
+					play_silence(client,scope,&mut self.devices[dev_id], 0..song_wraps_at);
+					t.playback(client,scope,&mut self.devices[dev_id], song_wraps_at..scope.n_frames() as usize);
+				}
+			}
+			else {
+				let dev_id = t.dev_id;
+				play_silence(client,scope,&mut self.devices[dev_id], 0..scope.n_frames() as usize);
+			}
+
+			cursor.move_next();
+		}
+
 
 		// then, handle all armed takes and record into them
-		for t in self.armed_takes.iter_mut() {
-			if t.state == Recording {
-				t.record(client,scope, &self.devices[t.dev_id], 0..song_wraps_at);
+		let mut cursor = self.takes.front();
+		while let Some(node) = cursor.get() {
+			let mut t = node.take.borrow_mut();
+			
+			if t.record_state == Recording {
+				let dev_id = t.dev_id;
+				t.record(client,scope, &self.devices[dev_id], 0..song_wraps_at);
 
 				if song_wraps {
-					println!("Finished recording on device {}", t.dev_id);
-					t.state = Finished;
+					println!("\nFinished recording on device {}", t.dev_id);
+					t.record_state = Finished;
 				}
 			}
-			else if t.state == Waiting {
+			else if t.record_state == Waiting {
 				if song_wraps {
-					println!("Started recording on device {}", t.dev_id);
-					t.state = Recording;
-					t.record(client,scope, &self.devices[t.dev_id], song_wraps_at..scope.n_frames() as usize);
+					println!("\nStarted recording on device {}", t.dev_id);
+					t.record_state = Recording;
+					let dev_id = t.dev_id;
+					t.record(client,scope, &self.devices[dev_id], song_wraps_at..scope.n_frames() as usize);
 				}
 			}
+
+			cursor.move_next();
 		}
 
-		// remove all finished takes from armed_takes
-		for take in remove_unordered_iter(&mut self.armed_takes, |t| t.state != Finished) {
-			self.playable_takes.push(PlayableTake{
-				take: take.take,
-				dev_id: take.dev_id,
-				active: true
-			});
-		}
+		self.song_position = (self.song_position + scope.n_frames()) % self.song_length;
+		});
 
 		jack::Control::Continue
 	}
 }
-*/
 
 struct Notifications;
 impl jack::NotificationHandler for Notifications {
@@ -382,37 +517,23 @@ fn main() {
 	let audiodev = AudioDevice::new(&client, 2, "fnord").unwrap();
 	let devices = vec![audiodev];
 	
-	//let (mut audio_thread_state, mut frontend_thread_state) = create_thread_states(devices,42);
-	{
-
-	let mut hass : outsourced_allocation_buffer::Buffer<u32> = outsourced_allocation_buffer::Buffer::new(32);
-
-	for i in 0..70 {
-		std::thread::sleep_ms(10);
-		assert_no_alloc(||{
-			hass.push(i);
-		});
-	}
-	
-	for i in 0..2 {
-		print!("rewinding...");
-		hass.rewind();
-		let mut i=0;
-		while let Some(val) = hass.next(|x|*x) {
-			print!(" {}", val);
-			assert_eq!(val,i);
-			i+=1;
-		}
-		println!();
-	}
-}
+	let (mut audio_thread_state, mut frontend_thread_state) = create_thread_states(devices, 48000*3);
 
 	let process_callback = move |client: &jack::Client, ps: &jack::ProcessScope| -> jack::Control {
-		//audio_thread_state.process_callback(client, ps)
-		jack::Control::Continue
+		audio_thread_state.process_callback(client, ps)
 	};
 	let process = jack::ClosureProcessHandler::new(process_callback);
 	let active_client = client.activate_async(Notifications, process).unwrap();
+
+	active_client.as_client().connect_ports_by_name("loopfisch:fnord_out1", "system:playback_1").unwrap();
+	active_client.as_client().connect_ports_by_name("loopfisch:fnord_out2", "system:playback_2").unwrap();
+	active_client.as_client().connect_ports_by_name("system:capture_1", "loopfisch:fnord_in1").unwrap();
+	active_client.as_client().connect_ports_by_name("system:capture_2", "loopfisch:fnord_in2").unwrap();
+	std::thread::sleep_ms(1000);
+
+
+	println!("adding take");
+	frontend_thread_state.add_take(0);
 
 	loop {}
 }
