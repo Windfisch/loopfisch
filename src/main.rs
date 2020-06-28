@@ -463,7 +463,6 @@ impl AudioThreadState {
 			let dev = &mut self.devices[dev_id];
 			// we assume that all channels have the same latencies.
 			let playback_latency = dev.channels[0].out_port.get_latency_range(jack::LatencyType::Playback).1;
-			let capture_latency = dev.channels[0].in_port.get_latency_range(jack::LatencyType::Capture).1;
 
 			let song_position = (self.song_position + self.song_length + playback_latency) % self.song_length;
 			let song_position_after = song_position + scope.n_frames();
@@ -474,7 +473,7 @@ impl AudioThreadState {
 
 			
 			if t.playing {
-				t.playback(client,scope,&mut self.devices[dev_id], 0..scope.n_frames() as usize);
+				t.playback(client,scope,dev, 0..scope.n_frames() as usize);
 			}
 			else if t.record_state == Recording {
 				if song_wraps {
@@ -482,8 +481,7 @@ impl AudioThreadState {
 					println!("\nAlmost finished recording on device {}, thus starting playback now", t.dev_id);
 					println!("Recording started at {}, now is {}", t.started_recording_at, self.transport_position + song_wraps_at as u32);
 					t.rewind();
-					let dev_id = t.dev_id;
-					t.playback(client,scope,&mut self.devices[dev_id], song_wraps_at..scope.n_frames() as usize);
+					t.playback(client,scope,dev, song_wraps_at..scope.n_frames() as usize);
 				}
 			}
 
@@ -495,9 +493,8 @@ impl AudioThreadState {
 		while let Some(node) = cursor.get() {
 			let mut t = node.take.borrow_mut();
 			let dev_id = t.dev_id;
-			let dev = &mut self.devices[dev_id];
+			let dev = &self.devices[dev_id];
 			// we assume that all channels have the same latencies.
-			let playback_latency = dev.channels[0].out_port.get_latency_range(jack::LatencyType::Playback).1;
 			let capture_latency = dev.channels[0].in_port.get_latency_range(jack::LatencyType::Capture).1;
 		
 			let song_position = (self.song_position + self.song_length - capture_latency) % self.song_length;
@@ -507,8 +504,7 @@ impl AudioThreadState {
 
 			
 			if t.record_state == Recording {
-				let dev_id = t.dev_id;
-				t.record(client,scope, &self.devices[dev_id], 0..song_wraps_at as usize);
+				t.record(client,scope,dev, 0..song_wraps_at as usize);
 
 				if song_wraps {
 					println!("\nFinished recording on device {}", t.dev_id);
@@ -520,8 +516,7 @@ impl AudioThreadState {
 					println!("\nStarted recording on device {}", t.dev_id);
 					t.record_state = Recording;
 					t.started_recording_at = self.transport_position + song_wraps_at;
-					let dev_id = t.dev_id;
-					t.record(client,scope, &self.devices[dev_id], song_wraps_at as usize ..scope.n_frames() as usize);
+					t.record(client,scope, dev, song_wraps_at as usize ..scope.n_frames() as usize);
 				}
 			}
 
