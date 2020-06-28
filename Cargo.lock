@@ -29,7 +29,7 @@ dependencies = [
 [[package]]
 name = "jack"
 version = "0.6.2"
-source = "git+https://github.com/Windfisch/rust-jack#9fa757dc7f8b26f88d4b8f86aec9e6c27717a092"
+source = "git+https://github.com/Windfisch/rust-jack#d77752bf4678fedee8077f50d02851e5693d0a78"
 dependencies = [
  "bitflags",
  "jack-sys",
@@ -40,7 +40,7 @@ dependencies = [
 [[package]]
 name = "jack-sys"
 version = "0.2.0"
-source = "git+https://github.com/Windfisch/rust-jack#9fa757dc7f8b26f88d4b8f86aec9e6c27717a092"
+source = "git+https://github.com/Windfisch/rust-jack#d77752bf4678fedee8077f50d02851e5693d0a78"
 dependencies = [
  "lazy_static",
  "libc",

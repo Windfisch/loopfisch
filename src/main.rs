@@ -104,7 +104,7 @@ mod outsourced_allocation_buffer {
 									buf: RefCell::new(Vec::with_capacity(capacity_increment))
 								});
 								incoming_producer.push(fragment).map_err(|_|()).unwrap();
-								println!("created new fragment");
+								//println!("created new fragment");
 							}
 							ThreadRequest::End => {
 								println!("helper thread exiting");
@@ -194,7 +194,7 @@ mod outsourced_allocation_buffer {
 				// a new fragment has been queued already
 				match self.incoming_fragment_ringbuf.pop() {
 					Some(fragment) => {
-						println!("got new fragment");
+						//println!("got new fragment");
 						self.fragments.push_back(fragment);
 						self.request_pending = false;
 					}
@@ -210,7 +210,7 @@ mod outsourced_allocation_buffer {
 				self.new_fragment_request_ringbuf.push(ThreadRequest::Fragment).map_err(|_|()).unwrap();
 				self.request_pending = true;
 				self.thread_handle.thread().unpark();
-				println!("requesting new fragment");
+				//println!("requesting new fragment");
 			}
 
 			Ok(())
@@ -274,7 +274,8 @@ struct Take {
 	record_state: RecordState,
 	dev_id: usize,
 	unmuted: bool,
-	playing: bool
+	playing: bool,
+	started_recording_at: u32,
 }
 
 impl Take {
@@ -346,7 +347,8 @@ struct AudioThreadState {
 	devices: Vec<AudioDevice>,
 	takes: LinkedList<TakeAdapter>,
 	new_take_channel: ringbuf::Consumer<Box<TakeNode>>,
-	song_position: u32,
+	transport_position: u32, // does not wrap 
+	song_position: u32, // wraps
 	song_length: u32,
 }
 
@@ -363,7 +365,8 @@ impl FrontendThreadState {
 			record_state: RecordState::Waiting,
 			dev_id,
 			unmuted: true,
-			playing: false
+			playing: false,
+			started_recording_at: 0
 		};
 		let take_node = Box::new(TakeNode::new(take));
 		self.new_take_channel.push(take_node);
@@ -383,6 +386,7 @@ fn create_thread_states(devices: Vec<AudioDevice>, song_length: u32) -> (AudioTh
 		devices,
 		takes: LinkedList::<TakeAdapter>::new(TakeAdapter::new()),
 		new_take_channel: take_receiver,
+		transport_position: 0,
 		song_position: 0,
 		song_length
 	};
@@ -423,21 +427,21 @@ fn remove_unordered_iter<T,F: FnMut(&mut T) -> bool>(vec: &mut Vec<T>, filter: F
 
 impl AudioThreadState {
 	fn process_callback(&mut self, client: &jack::Client, scope: &jack::ProcessScope) -> jack::Control {
+		//println!("process from thread #{:?}", std::thread::current().id());
 		use RecordState::*;
 		assert_no_alloc(||{
 
 
 		assert!(scope.n_frames() < self.song_length);
 
-		let song_position = self.song_position;
-		let song_position_after = song_position + scope.n_frames();
-		let song_wraps = self.song_length <= song_position_after;
-		let song_wraps_at = min(self.song_length - song_position, scope.n_frames()) as usize;
-		
-		print!("\rprocess @ {:5.1}% {:2x} {} {} -- {}", (song_position as f32 / self.song_length as f32) * 100.0, 256*song_position / self.song_length, 8 * song_position / self.song_length, song_position, song_position_after);
-
 		use std::io::Write;
 		std::io::stdout().flush().unwrap();
+
+		{
+			let song_position = self.song_position;
+			let song_position_after = song_position + scope.n_frames();
+			print!("\rprocess @ {:5.1}% {:2x} {} {} -- {}", (song_position as f32 / self.song_length as f32) * 100.0, 256*song_position / self.song_length, 8 * song_position / self.song_length, song_position, song_position_after);
+		}
 
 		// first, handle the take channel
 		loop {
@@ -447,23 +451,36 @@ impl AudioThreadState {
 			}
 		}
 
+		// then, handle all playing takes
 		for dev in self.devices.iter_mut() {
 			play_silence(client,scope,dev,0..scope.n_frames() as usize);
 		}
 		
-		// then, handle all playing takes
 		let mut cursor = self.takes.front();
 		while let Some(node) = cursor.get() {
 			let mut t = node.take.borrow_mut();
+			let dev_id = t.dev_id;
+			let dev = &mut self.devices[dev_id];
+			// we assume that all channels have the same latencies.
+			let playback_latency = dev.channels[0].out_port.get_latency_range(jack::LatencyType::Playback).1;
+			let capture_latency = dev.channels[0].in_port.get_latency_range(jack::LatencyType::Capture).1;
+
+			let song_position = (self.song_position + self.song_length + playback_latency) % self.song_length;
+			let song_position_after = song_position + scope.n_frames();
+			let song_wraps = self.song_length <= song_position_after;
+			let song_wraps_at = min(self.song_length - song_position, scope.n_frames()) as usize;
+			
+
+
 			
 			if t.playing {
-				let dev_id = t.dev_id;
 				t.playback(client,scope,&mut self.devices[dev_id], 0..scope.n_frames() as usize);
 			}
 			else if t.record_state == Recording {
 				if song_wraps {
 					t.playing = true;
 					println!("\nAlmost finished recording on device {}, thus starting playback now", t.dev_id);
+					println!("Recording started at {}, now is {}", t.started_recording_at, self.transport_position + song_wraps_at as u32);
 					t.rewind();
 					let dev_id = t.dev_id;
 					t.playback(client,scope,&mut self.devices[dev_id], song_wraps_at..scope.n_frames() as usize);
@@ -473,15 +490,25 @@ impl AudioThreadState {
 			cursor.move_next();
 		}
 
-
 		// then, handle all armed takes and record into them
 		let mut cursor = self.takes.front();
 		while let Some(node) = cursor.get() {
 			let mut t = node.take.borrow_mut();
+			let dev_id = t.dev_id;
+			let dev = &mut self.devices[dev_id];
+			// we assume that all channels have the same latencies.
+			let playback_latency = dev.channels[0].out_port.get_latency_range(jack::LatencyType::Playback).1;
+			let capture_latency = dev.channels[0].in_port.get_latency_range(jack::LatencyType::Capture).1;
+		
+			let song_position = (self.song_position + self.song_length - capture_latency) % self.song_length;
+			let song_position_after = song_position + scope.n_frames();
+			let song_wraps = self.song_length <= song_position_after;
+			let song_wraps_at = min(self.song_length - song_position, scope.n_frames());
+
 			
 			if t.record_state == Recording {
 				let dev_id = t.dev_id;
-				t.record(client,scope, &self.devices[dev_id], 0..song_wraps_at);
+				t.record(client,scope, &self.devices[dev_id], 0..song_wraps_at as usize);
 
 				if song_wraps {
 					println!("\nFinished recording on device {}", t.dev_id);
@@ -492,8 +519,9 @@ impl AudioThreadState {
 				if song_wraps {
 					println!("\nStarted recording on device {}", t.dev_id);
 					t.record_state = Recording;
+					t.started_recording_at = self.transport_position + song_wraps_at;
 					let dev_id = t.dev_id;
-					t.record(client,scope, &self.devices[dev_id], song_wraps_at..scope.n_frames() as usize);
+					t.record(client,scope, &self.devices[dev_id], song_wraps_at as usize ..scope.n_frames() as usize);
 				}
 			}
 
@@ -501,6 +529,7 @@ impl AudioThreadState {
 		}
 
 		self.song_position = (self.song_position + scope.n_frames()) % self.song_length;
+		self.transport_position += scope.n_frames();
 		});
 
 		jack::Control::Continue
@@ -511,6 +540,10 @@ struct Notifications;
 impl jack::NotificationHandler for Notifications {
 	fn thread_init(&self, _: &jack::Client) {
 		println!("JACK: thread init");
+	}
+
+	fn latency(&mut self, _: &jack::Client, _mode: jack::LatencyType) {
+		println!("latency callback from thread #{:?}", std::thread::current().id());
 	}
 
 	fn shutdown(&mut self, status: jack::ClientStatus, reason: &str) {
@@ -547,7 +580,7 @@ fn main() {
 	std::thread::sleep_ms(1000);
 	println!("adding take");
 	frontend_thread_state.add_take(0);
-	std::thread::sleep_ms(4000);
+	std::thread::sleep_ms(10000);
 	println!("adding take");
 	frontend_thread_state.add_take(0);
 
