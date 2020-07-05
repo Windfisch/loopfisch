@@ -286,6 +286,7 @@ impl Take {
 				let mut val = channel_buffer.next(|v|*v);
 				if val.is_none() {
 					channel_buffer.rewind();
+					println!("\nrewind in playback\n");
 					val = channel_buffer.next(|v|*v);
 				}
 				if let Some(v) = val {
@@ -459,8 +460,7 @@ impl AudioThreadState {
 		let mut cursor = self.takes.front();
 		while let Some(node) = cursor.get() {
 			let mut t = node.take.borrow_mut();
-			let dev_id = t.dev_id;
-			let dev = &mut self.devices[dev_id];
+			let dev = &mut self.devices[t.dev_id];
 			// we assume that all channels have the same latencies.
 			let playback_latency = dev.channels[0].out_port.get_latency_range(jack::LatencyType::Playback).1;
 
@@ -474,6 +474,7 @@ impl AudioThreadState {
 			
 			if t.playing {
 				t.playback(client,scope,dev, 0..scope.n_frames() as usize);
+				if song_wraps { println!("\n10/10 would rewind\n"); }
 			}
 			else if t.record_state == Recording {
 				if song_wraps {
@@ -492,8 +493,7 @@ impl AudioThreadState {
 		let mut cursor = self.takes.front();
 		while let Some(node) = cursor.get() {
 			let mut t = node.take.borrow_mut();
-			let dev_id = t.dev_id;
-			let dev = &self.devices[dev_id];
+			let dev = &self.devices[t.dev_id];
 			// we assume that all channels have the same latencies.
 			let capture_latency = dev.channels[0].in_port.get_latency_range(jack::LatencyType::Capture).1;
 		
