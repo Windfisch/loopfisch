@@ -299,7 +299,9 @@ impl Take {
 					val = channel_buffer.next(|v|*v);
 				}
 				if let Some(v) = val {
-					*d += v;
+					if self.unmuted { // FIXME fade in / out to avoid clicks
+						*d += v;
+					}
 				}
 				else {
 					panic!();
@@ -353,10 +355,16 @@ impl TakeNode {
 
 intrusive_adapter!(TakeAdapter = Box<TakeNode>: TakeNode { link: LinkedListLink });
 
+enum Message {
+	NewTake(Box<TakeNode>),
+	SetMute(u32,bool),
+	DeleteTake(u32)
+}
+
 struct AudioThreadState {
 	devices: Vec<AudioDevice>,
 	takes: LinkedList<TakeAdapter>,
-	new_take_channel: ringbuf::Consumer<Box<TakeNode>>,
+	new_take_channel: ringbuf::Consumer<Message>,
 	transport_position: u32, // does not wrap 
 	song_position: u32, // wraps
 	song_length: u32,
@@ -373,7 +381,7 @@ struct SharedThreadState {
 }
 
 struct FrontendThreadState {
-	new_take_channel: ringbuf::Producer<Box<TakeNode>>,
+	new_take_channel: ringbuf::Producer<Message>,
 	device_info: Vec<AudioDeviceInfo>,
 	shared: Arc<SharedThreadState>,
 	takes: Vec<GuiTake>,
@@ -395,16 +403,17 @@ impl FrontendThreadState {
 			started_recording_at: 0
 		};
 		let take_node = Box::new(TakeNode::new(take));
-		self.new_take_channel.push(take_node);
+		self.new_take_channel.push(Message::NewTake(take_node));
 
 		self.takes.push(GuiTake{id, dev_id, unmuted: true});
 
 		self.id_counter += 1;
 	}
 
-	fn set_take_muted(&mut self, take_id: usize, muted: bool) {
-		self.takes[take_id].unmuted = !muted;
-
+	fn toggle_take_muted(&mut self, take_id: usize) {
+		let old_unmuted = self.takes[take_id].unmuted;
+		self.takes[take_id].unmuted = !old_unmuted;
+		self.new_take_channel.push(Message::SetMute(self.takes[take_id].id, old_unmuted));
 	}
 }
 
@@ -416,7 +425,7 @@ fn create_thread_states(devices: Vec<AudioDevice>, song_length: u32) -> (AudioTh
 		transport_position: AtomicU32::new(0),
 	});
 
-	let (take_sender, take_receiver) = ringbuf::RingBuffer::<Box<TakeNode>>::new(10).split();
+	let (take_sender, take_receiver) = ringbuf::RingBuffer::<Message>::new(10).split();
 	
 
 	let frontend_thread_state = FrontendThreadState {
@@ -492,7 +501,27 @@ impl AudioThreadState {
 		// first, handle the take channel
 		loop {
 			match self.new_take_channel.pop() {
-				Some(take) => { println!("\ngot take"); self.takes.push_back(take); }
+				Some(msg) => {
+					match msg {
+						Message::NewTake(take) => { println!("\ngot take"); self.takes.push_back(take); }
+						Message::SetMute(id, muted) => {
+							// FIXME this is not nice...
+							let mut cursor = self.takes.front();
+							while let Some(node) = cursor.get() {
+								let mut t = node.take.borrow_mut();
+								if t.id == id {
+									t.unmuted = !muted;
+									break;
+								}
+								cursor.move_next();
+							}
+							if cursor.get().is_none() {
+								panic!("could not find take to mute");
+							}
+						}
+						_ => { unimplemented!() }
+					}
+				}
 				None => { break; }
 			}
 		}
@@ -639,7 +668,7 @@ impl UserInterface {
 		print!("Selected device: {}    \r\n", self.dev_id);
 	}
 
-	fn handle_input(&mut self, frontend_thread_state: &FrontendThreadState) -> crossterm::Result<bool> {
+	fn handle_input(&mut self, frontend_thread_state: &mut FrontendThreadState) -> crossterm::Result<bool> {
 		use std::time::Duration;
 		use crossterm::event::{Event,KeyModifiers,KeyEvent,KeyCode};
 		while crossterm::event::poll(Duration::from_millis(16))? {
@@ -661,9 +690,10 @@ impl UserInterface {
 								'a'..='z' => {
 									let num = letter2id(c);
 									if num <= letter2id('l') {
+										frontend_thread_state.toggle_take_muted(num as usize);
 									}
 									else {
-										
+										frontend_thread_state.add_take(self.dev_id);
 									}
 								}
 								_ => {}
@@ -678,7 +708,7 @@ impl UserInterface {
 		Ok(false)
 	}
 	
-	fn spin(&mut self, frontend_thread_state: &FrontendThreadState) -> crossterm::Result<bool> {
+	fn spin(&mut self, frontend_thread_state: &mut FrontendThreadState) -> crossterm::Result<bool> {
 		self.redraw(frontend_thread_state);
 		self.handle_input(frontend_thread_state)
 	}
@@ -692,7 +722,8 @@ fn main() {
 	println!("JACK running with sampling rate {} Hz, buffer size = {} samples", client.sample_rate(), client.buffer_size());
 
 	let audiodev = AudioDevice::new(&client, 2, "fnord").unwrap();
-	let devices = vec![audiodev];
+	let audiodev2 = AudioDevice::new(&client, 2, "dronf").unwrap();
+	let devices = vec![audiodev, audiodev2];
 	
 	let (mut audio_thread_state, mut frontend_thread_state) = create_thread_states(devices, 48000*3);
 
@@ -710,7 +741,7 @@ fn main() {
 	let mut ui = UserInterface::new();
 	crossterm::terminal::enable_raw_mode();
 	loop {
-		if ui.spin(&frontend_thread_state).unwrap() {
+		if ui.spin(&mut frontend_thread_state).unwrap() {
 			break;
 		}
 	}
