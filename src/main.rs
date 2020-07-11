@@ -16,6 +16,8 @@
 use jack;
 use std::cmp::{min,max};
 
+use crossterm;
+
 use assert_no_alloc::assert_no_alloc;
 
 #[cfg(debug_assertions)]
@@ -272,10 +274,17 @@ use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListLink};
 struct Take {
 	samples: Vec<Buffer<f32>>,
 	record_state: RecordState,
+	id: u32,
 	dev_id: usize,
 	unmuted: bool,
 	playing: bool,
 	started_recording_at: u32,
+}
+
+struct GuiTake {
+	id: u32,
+	dev_id: usize,
+	unmuted: bool
 }
 
 impl Take {
@@ -351,19 +360,35 @@ struct AudioThreadState {
 	transport_position: u32, // does not wrap 
 	song_position: u32, // wraps
 	song_length: u32,
+	shared: Arc<SharedThreadState>
+}
+
+use std::sync::atomic::*;
+use std::sync::Arc;
+
+struct SharedThreadState {
+	song_length: AtomicU32,
+	song_position: AtomicU32,
+	transport_position: AtomicU32,
 }
 
 struct FrontendThreadState {
 	new_take_channel: ringbuf::Producer<Box<TakeNode>>,
-	device_info: Vec<AudioDeviceInfo>
+	device_info: Vec<AudioDeviceInfo>,
+	shared: Arc<SharedThreadState>,
+	takes: Vec<GuiTake>,
+	id_counter: u32
 }
 
 impl FrontendThreadState {
 	fn add_take(&mut self, dev_id: usize) {
+		let id = self.id_counter;
+
 		let n_channels = self.device_info[dev_id].n_channels;
 		let take = Take {
 			samples: (0..n_channels).map(|_| Buffer::new(1024*8,512*8)).collect(),
 			record_state: RecordState::Waiting,
+			id,
 			dev_id,
 			unmuted: true,
 			playing: false,
@@ -371,16 +396,35 @@ impl FrontendThreadState {
 		};
 		let take_node = Box::new(TakeNode::new(take));
 		self.new_take_channel.push(take_node);
+
+		self.takes.push(GuiTake{id, dev_id, unmuted: true});
+
+		self.id_counter += 1;
+	}
+
+	fn set_take_muted(&mut self, take_id: usize, muted: bool) {
+		self.takes[take_id].unmuted = !muted;
+
 	}
 }
 
 fn create_thread_states(devices: Vec<AudioDevice>, song_length: u32) -> (AudioThreadState, FrontendThreadState) {
+
+	let shared = Arc::new(SharedThreadState {
+		song_length: AtomicU32::new(1),
+		song_position: AtomicU32::new(0),
+		transport_position: AtomicU32::new(0),
+	});
+
 	let (take_sender, take_receiver) = ringbuf::RingBuffer::<Box<TakeNode>>::new(10).split();
 	
 
 	let frontend_thread_state = FrontendThreadState {
 		new_take_channel: take_sender,
-		device_info: devices.iter().map(|d| d.info()).collect()
+		device_info: devices.iter().map(|d| d.info()).collect(),
+		shared: Arc::clone(&shared),
+		takes: Vec::new(),
+		id_counter: 0
 	};
 
 	let audio_thread_state = AudioThreadState {
@@ -389,7 +433,8 @@ fn create_thread_states(devices: Vec<AudioDevice>, song_length: u32) -> (AudioTh
 		new_take_channel: take_receiver,
 		transport_position: 0,
 		song_position: 0,
-		song_length
+		song_length,
+		shared: Arc::clone(&shared)
 	};
 
 	return (audio_thread_state, frontend_thread_state);
@@ -441,7 +486,7 @@ impl AudioThreadState {
 		{
 			let song_position = self.song_position;
 			let song_position_after = song_position + scope.n_frames();
-			print!("\rprocess @ {:5.1}% {:2x} {} {} -- {}", (song_position as f32 / self.song_length as f32) * 100.0, 256*song_position / self.song_length, 8 * song_position / self.song_length, song_position, song_position_after);
+			//print!("\rprocess @ {:5.1}% {:2x} {} {} -- {}", (song_position as f32 / self.song_length as f32) * 100.0, 256*song_position / self.song_length, 8 * song_position / self.song_length, song_position, song_position_after);
 		}
 
 		// first, handle the take channel
@@ -525,6 +570,10 @@ impl AudioThreadState {
 
 		self.song_position = (self.song_position + scope.n_frames()) % self.song_length;
 		self.transport_position += scope.n_frames();
+
+		self.shared.song_length.store(self.song_length, std::sync::atomic::Ordering::Relaxed);
+		self.shared.song_position.store(self.song_position, std::sync::atomic::Ordering::Relaxed);
+		self.shared.transport_position.store(self.transport_position, std::sync::atomic::Ordering::Relaxed);
 		});
 
 		jack::Control::Continue
@@ -546,6 +595,92 @@ impl jack::NotificationHandler for Notifications {
 				"JACK: shutdown with status {:?} because \"{}\"",
 				status, reason
 				);
+	}
+}
+
+
+static LETTERS: [char;26] = ['q','w','e','r','t','y','u','i','o','p','a','s','d','f','g','h','j','k','l','z','x','c','v','b','n','m'];
+fn letter2id(c: char) -> u32 {
+	for (i,l) in LETTERS.iter().enumerate() {
+		if *l==c { return i as u32; }
+	}
+	panic!("letter2id must be called with a letter");
+}
+fn id2letter(i: u32) -> char {
+	return LETTERS[i as usize];
+}
+
+struct UserInterface {
+	dev_id: usize
+}
+
+impl UserInterface {
+	fn new() -> UserInterface {
+		UserInterface {
+			dev_id: 0
+		}
+	}
+
+	fn redraw(&self, frontend_thread_state: &FrontendThreadState) {
+		use std::io::{Write, stdout};
+		use crossterm::cursor::*;
+		use crossterm::terminal::*;
+		use crossterm::*;
+		execute!( stdout(),
+			Clear(ClearType::All),
+			MoveTo(0,0)
+		).unwrap();
+
+		let song_length = frontend_thread_state.shared.song_length.load(std::sync::atomic::Ordering::Relaxed);
+		let song_position = frontend_thread_state.shared.song_position.load(std::sync::atomic::Ordering::Relaxed);
+		let transport_position = frontend_thread_state.shared.transport_position.load(std::sync::atomic::Ordering::Relaxed);
+		print!("Transport position: {}     \r\n", transport_position);
+		print!("Song position: {:5.1}% {:2x} {:1} {}      \r\n", (song_position as f32 / song_length as f32) * 100.0, 256*song_position / song_length, 8 * song_position / song_length, song_position);
+		print!("Selected device: {}    \r\n", self.dev_id);
+	}
+
+	fn handle_input(&mut self, frontend_thread_state: &FrontendThreadState) -> crossterm::Result<bool> {
+		use std::time::Duration;
+		use crossterm::event::{Event,KeyModifiers,KeyEvent,KeyCode};
+		while crossterm::event::poll(Duration::from_millis(16))? {
+			let ev = crossterm::event::read()?;
+			match ev {
+				crossterm::event::Event::Key(kev) => {
+					//println!("key: {:?}", kev);
+
+					if kev.code == KeyCode::Char('c') && kev.modifiers == KeyModifiers::CONTROL {
+						return Ok(true);
+					}
+
+					match kev.code {
+						KeyCode::Char(c) => {
+							match c {
+								'0'..='9' => {
+									self.dev_id = c as usize - '0' as usize;
+								}
+								'a'..='z' => {
+									let num = letter2id(c);
+									if num <= letter2id('l') {
+									}
+									else {
+										
+									}
+								}
+								_ => {}
+							}
+						}
+						_ => {}
+					}
+				}
+				_ => {}
+			}
+		}
+		Ok(false)
+	}
+	
+	fn spin(&mut self, frontend_thread_state: &FrontendThreadState) -> crossterm::Result<bool> {
+		self.redraw(frontend_thread_state);
+		self.handle_input(frontend_thread_state)
 	}
 }
 
@@ -572,6 +707,16 @@ fn main() {
 	active_client.as_client().connect_ports_by_name("system:capture_1", "loopfisch:fnord_in1").unwrap();
 	active_client.as_client().connect_ports_by_name("system:capture_2", "loopfisch:fnord_in2").unwrap();
 	
+	let mut ui = UserInterface::new();
+	crossterm::terminal::enable_raw_mode();
+	loop {
+		if ui.spin(&frontend_thread_state).unwrap() {
+			break;
+		}
+	}
+	crossterm::terminal::disable_raw_mode();
+
+	
 	std::thread::sleep_ms(1000);
 	println!("adding take");
 	frontend_thread_state.add_take(0);
@@ -579,5 +724,5 @@ fn main() {
 	println!("adding take");
 	frontend_thread_state.add_take(0);
 
-	loop {}
+
 }
