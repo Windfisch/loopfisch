@@ -14,7 +14,8 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use jack;
-use std::cmp::{min,max};
+use smallvec;
+use std::cmp::min;
 
 use crossterm;
 
@@ -143,6 +144,9 @@ mod outsourced_allocation_buffer {
 		/// Execute func() on the next item and return its result, if there is a next item.
 		/// If there is none, return None.
 		pub fn next<S,F: FnOnce(&T) -> S>(&mut self, func: F) -> Option<S> {
+			self.next_ref().map(func)
+		}
+		pub fn next_ref(&mut self) -> Option<&T> {
 			if self.iter_cursor.is_null() {
 				return None;
 			}
@@ -156,7 +160,7 @@ mod outsourced_allocation_buffer {
 		
 			// Perform the actual access. This is always a valid element because no elements can
 			// be deleted.
-			let result = func(&buf[self.iter_index]);
+			let result = &buf[self.iter_index];
 		
 			// Now advance the iterator
 			if self.iter_index + 1 < buf.len() {
@@ -178,6 +182,25 @@ mod outsourced_allocation_buffer {
 						std::ptr::null()
 					}
 				};
+
+			return Some(result);
+		}
+
+		pub fn peek_ref(&mut self) -> Option<&T> {
+			if self.iter_cursor.is_null() {
+				return None;
+			}
+
+			// Get a cursor from the pointer. This places a borrow on self.fragments
+			// This is safe iif iter_cursor points to an element current in the list.
+			// Since list elements are only added, but never removed, and since iter_cursor
+			// has already belonged to the list when it was set, this is fine.
+			let mut cursor = unsafe{ self.fragments.cursor_from_ptr(self.iter_cursor) };
+			let buf = cursor.get().unwrap().buf.borrow();
+		
+			// Perform the actual access. This is always a valid element because no elements can
+			// be deleted.
+			let result = &buf[self.iter_index];
 
 			return Some(result);
 		}
@@ -221,6 +244,62 @@ mod outsourced_allocation_buffer {
 }
 
 use outsourced_allocation_buffer::Buffer;
+
+struct MidiMessage {
+	timestamp: jack::Frames,
+	data: [u8; 3]
+}
+
+struct MidiDevice {
+	in_port: jack::Port<jack::MidiIn>,
+	out_port: jack::Port<jack::MidiOut>,
+
+	out_buffer: smallvec::SmallVec<[(MidiMessage, usize); 128]>,
+}
+
+impl MidiDevice {
+	/// sorts the events in the out_buffer, commits them to the out_port and clears the out_buffer.
+	/// FIXME: deduping
+	pub fn commit_out_buffer(&mut self, scope: &jack::ProcessScope) {
+		// sort
+		self.out_buffer.sort_unstable_by( |a,b| a.0.timestamp.cmp(&b.0.timestamp).then(a.1.cmp(&b.1)) );
+
+		// write
+		let mut writer = self.out_port.writer(scope);
+		for (msg,_idx) in self.out_buffer.iter() {
+			// FIXME: do the deduping here
+			writer.write(&jack::RawMidi {
+				time: msg.timestamp,
+				bytes: &msg.data
+			}).unwrap();
+		}
+
+		// clear
+		self.out_buffer.clear();
+	}
+	pub fn queue_event(&mut self, msg: MidiMessage) -> Result<(), ()> {
+		if self.out_buffer.len() < self.out_buffer.inline_size() {
+			self.out_buffer.push((msg, self.out_buffer.len()));
+			Ok(())
+		}
+		else {
+			Err(())
+		}
+	}
+}
+
+impl MidiDevice {
+	pub fn new(client: &jack::Client, name: &str) -> Result<MidiDevice, jack::Error> {
+		let in_port = client.register_port(&format!("{}_in", name), jack::MidiIn::default())?;
+		let out_port = client.register_port(&format!("{}_out", name), jack::MidiOut::default())?;
+		let dev = MidiDevice {
+			in_port,
+			out_port,
+			out_buffer: smallvec::SmallVec::new()
+		};
+		Ok(dev)
+	}
+}
 
 struct AudioChannel {
 	in_port: jack::Port<jack::AudioIn>,
@@ -271,6 +350,18 @@ enum RecordState {
 
 use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListLink};
 
+struct MidiTake {
+	events: Buffer<MidiMessage>,
+	current_position: u32,
+	duration: u32,
+	record_state: RecordState,
+	id: u32,
+	mididev_id: usize,
+	unmuted: bool,
+	playing: bool,
+	started_recording_at: u32,
+}
+
 struct Take {
 	samples: Vec<Buffer<f32>>,
 	record_state: RecordState,
@@ -285,6 +376,70 @@ struct GuiTake {
 	id: u32,
 	dev_id: usize,
 	unmuted: bool
+}
+
+impl MidiTake {
+	pub fn playback(&mut self, device: &mut MidiDevice, range: std::ops::Range<usize>) {
+		let position_after = self.current_position + range.len() as u32;
+
+		// iterate through the events until either a) we've reached the end or b) we've reached
+		// an event which is past the current period.
+		while let Some(event) = self.events.peek_ref() {
+			assert!(event.timestamp >= self.current_position);
+			let relative_timestamp = event.timestamp - self.current_position + range.start as u32;
+			assert!(relative_timestamp >= range.start as u32);
+			if relative_timestamp >= range.end as u32 {
+				break;
+			}
+
+			device.queue_event(
+				MidiMessage {
+					timestamp: relative_timestamp,
+					data: event.data
+				}
+			);
+
+			self.events.next_ref();
+		}
+
+		if self.events.peek_ref().is_none() {
+			// we reached the end (a), so we need to rewind and may need to play back more events
+			self.events.rewind();
+			
+			while let Some(event) = self.events.peek_ref() {
+				let relative_timestamp = event.timestamp + self.duration - self.current_position + range.start as u32;
+				assert!(relative_timestamp >= range.start as u32);
+				if relative_timestamp >= range.end as u32 {
+					break;
+				}
+
+				device.queue_event(
+					MidiMessage {
+						timestamp: relative_timestamp,
+						data: event.data
+					}
+				);
+
+				self.events.next_ref();
+			}
+
+			if self.events.peek_ref().is_none() {
+				// we've reached the end *another* time? i.e. the period size is larger than
+				// the loop length?!
+				panic!();
+			}
+			self.current_position = position_after - self.duration;
+		}
+		else {
+			// we haven't reached the end yet. this is the usual case
+			self.current_position = position_after;
+		}
+	}
+
+	pub fn rewind(&mut self) {
+		self.current_position = 0;
+		self.events.rewind();
+	}
 }
 
 impl Take {
@@ -304,7 +459,6 @@ impl Take {
 					}
 				}
 				else {
-					panic!();
 					unreachable!();
 				}
 			}
@@ -353,7 +507,22 @@ impl TakeNode {
 	}
 }
 
+struct MidiTakeNode {
+	take: RefCell<MidiTake>,
+	link: LinkedListLink
+}
+
+impl MidiTakeNode {
+	fn new(take: MidiTake) -> MidiTakeNode {
+		MidiTakeNode {
+			take: RefCell::new(take),
+			link: LinkedListLink::new()
+		}
+	}
+}
+
 intrusive_adapter!(TakeAdapter = Box<TakeNode>: TakeNode { link: LinkedListLink });
+intrusive_adapter!(MidiTakeAdapter = Box<MidiTakeNode>: MidiTakeNode { link: LinkedListLink });
 
 enum Message {
 	NewTake(Box<TakeNode>),
@@ -363,7 +532,9 @@ enum Message {
 
 struct AudioThreadState {
 	devices: Vec<AudioDevice>,
+	mididevices: Vec<MidiDevice>,
 	takes: LinkedList<TakeAdapter>,
+	miditakes: LinkedList<MidiTakeAdapter>,
 	new_take_channel: ringbuf::Consumer<Message>,
 	transport_position: u32, // does not wrap 
 	song_position: u32, // wraps
@@ -417,7 +588,7 @@ impl FrontendThreadState {
 	}
 }
 
-fn create_thread_states(devices: Vec<AudioDevice>, song_length: u32) -> (AudioThreadState, FrontendThreadState) {
+fn create_thread_states(devices: Vec<AudioDevice>, mididevices: Vec<MidiDevice>, song_length: u32) -> (AudioThreadState, FrontendThreadState) {
 
 	let shared = Arc::new(SharedThreadState {
 		song_length: AtomicU32::new(1),
@@ -438,7 +609,9 @@ fn create_thread_states(devices: Vec<AudioDevice>, song_length: u32) -> (AudioTh
 
 	let audio_thread_state = AudioThreadState {
 		devices,
-		takes: LinkedList::<TakeAdapter>::new(TakeAdapter::new()),
+		mididevices,
+		takes: LinkedList::new(TakeAdapter::new()),
+		miditakes: LinkedList::new(MidiTakeAdapter::new()),
 		new_take_channel: take_receiver,
 		transport_position: 0,
 		song_position: 0,
@@ -491,12 +664,6 @@ impl AudioThreadState {
 
 		use std::io::Write;
 		std::io::stdout().flush().unwrap();
-
-		{
-			let song_position = self.song_position;
-			let song_position_after = song_position + scope.n_frames();
-			//print!("\rprocess @ {:5.1}% {:2x} {} {} -- {}", (song_position as f32 / self.song_length as f32) * 100.0, 256*song_position / self.song_length, 8 * song_position / self.song_length, song_position, song_position_after);
-		}
 
 		// first, handle the take channel
 		loop {
@@ -562,6 +729,43 @@ impl AudioThreadState {
 
 			cursor.move_next();
 		}
+
+		// then, handle all playing MIDI takes
+		let mut cursor = self.miditakes.front();
+		while let Some(node) = cursor.get() {
+			let mut t = node.take.borrow_mut();
+			let dev = &mut self.mididevices[t.mididev_id];
+			let playback_latency = dev.out_port.get_latency_range(jack::LatencyType::Playback).1;
+
+			let song_position = (self.song_position + self.song_length + playback_latency) % self.song_length;
+			let song_position_after = song_position + scope.n_frames();
+			let song_wraps = self.song_length <= song_position_after;
+			let song_wraps_at = min(self.song_length - song_position, scope.n_frames()) as usize;
+			
+
+
+			
+			if t.playing {
+				t.playback(dev, 0..scope.n_frames() as usize);
+				if song_wraps { println!("\n10/10 would rewind\n"); }
+			}
+			else if t.record_state == Recording {
+				if song_wraps {
+					t.playing = true;
+					println!("\nAlmost finished recording on midi device {}, thus starting playback now", t.mididev_id);
+					println!("Recording started at {}, now is {}", t.started_recording_at, self.transport_position + song_wraps_at as u32);
+					t.rewind();
+					t.playback(dev, song_wraps_at..scope.n_frames() as usize);
+				}
+			}
+
+			cursor.move_next();
+		}
+		
+		for dev in self.mididevices.iter_mut() {
+			dev.commit_out_buffer(scope);
+		}
+		
 
 		// then, handle all armed takes and record into them
 		let mut cursor = self.takes.front();
@@ -723,9 +927,11 @@ fn main() {
 
 	let audiodev = AudioDevice::new(&client, 2, "fnord").unwrap();
 	let audiodev2 = AudioDevice::new(&client, 2, "dronf").unwrap();
+	let mididev = MidiDevice::new(&client, "midi").unwrap();
 	let devices = vec![audiodev, audiodev2];
+	let mididevs = vec![mididev];
 	
-	let (mut audio_thread_state, mut frontend_thread_state) = create_thread_states(devices, 48000*3);
+	let (mut audio_thread_state, mut frontend_thread_state) = create_thread_states(devices, mididevs, 48000*3);
 
 	let process_callback = move |client: &jack::Client, ps: &jack::ProcessScope| -> jack::Control {
 		audio_thread_state.process_callback(client, ps)

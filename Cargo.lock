@@ -176,6 +176,7 @@ dependencies = [
  "intrusive-collections",
  "jack",
  "ringbuf",
+ "smallvec",
 ]
 
 [[package]]
