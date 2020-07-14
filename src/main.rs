@@ -392,8 +392,6 @@ impl MidiTake {
 	/// them into device's playback queue. The events are automatically looped every
 	/// `self.duration` frames.
 	pub fn playback(&mut self, device: &mut MidiDevice, range: std::ops::Range<usize>) {
-		assert!(!self.events.empty());
-
 		let position_after = self.current_position + range.len() as u32;
 
 		// iterate through the events until either a) we've reached the end or b) we've reached
@@ -402,7 +400,7 @@ impl MidiTake {
 		let mut rewind_offset = 0;
 		loop {
 			let result = self.events.peek( |event| {
-				assert!(event.timestamp >= curr_pos);
+				assert!(event.timestamp + rewind_offset >= curr_pos);
 				let relative_timestamp = event.timestamp + rewind_offset - curr_pos + range.start as u32;
 				assert!(relative_timestamp >= range.start as u32);
 				if relative_timestamp >= range.end as u32 {
@@ -421,8 +419,16 @@ impl MidiTake {
 
 			match result {
 				None => { // we hit the end of the event list
-					self.events.rewind();
-					rewind_offset += self.duration;
+					if  position_after - rewind_offset > self.duration {
+						// we actually should rewind, since the playhead position has hit the end
+						self.events.rewind();
+						rewind_offset += self.duration;
+					}
+					else {
+						// we should *not* rewind: we're at the end of the event list, but the
+						// loop duration itself has not passed yet
+						break;
+					}
 				}
 				Some(true) => { // the usual case
 					self.events.next(|_|());
@@ -439,6 +445,29 @@ impl MidiTake {
 	pub fn rewind(&mut self) {
 		self.current_position = 0;
 		self.events.rewind();
+	}
+
+	pub fn record(&mut self, scope: &jack::ProcessScope, device: &MidiDevice, range: std::ops::Range<usize>) {
+		use std::convert::TryInto;
+		for event in device.in_port.iter(scope) {
+			if range.contains(&(event.time as usize)) {
+				if event.bytes.len() != 3 {
+					// FIXME
+					println!("ignoring event with length != 3");
+				}
+				else {
+					let data: [u8;3] = event.bytes.try_into().unwrap();
+					let timestamp = event.time - range.start as u32 + self.duration;
+					self.events.push( MidiMessage {
+						timestamp,
+						data
+					});
+					// TODO: assert that this is monotonic
+				}
+			}
+		}
+		
+		self.duration += range.len() as u32;
 	}
 }
 
@@ -471,7 +500,7 @@ impl Take {
 		}
 	}
 
-	pub fn record(&mut self, client: &jack::Client, scope: &jack::ProcessScope, device: &AudioDevice, range: std::ops::Range<usize>) {
+	pub fn record(&mut self, scope: &jack::ProcessScope, device: &AudioDevice, range: std::ops::Range<usize>) {
 		for (channel_buffer, channel_ports) in self.samples.iter_mut().zip(device.channels.iter()) {
 			let data = &channel_ports.in_port.as_slice(scope)[range.clone()];
 			for d in data {
@@ -526,6 +555,7 @@ intrusive_adapter!(MidiTakeAdapter = Box<MidiTakeNode>: MidiTakeNode { link: Lin
 
 enum Message {
 	NewTake(Box<TakeNode>),
+	NewMidiTake(Box<MidiTakeNode>),
 	SetMute(u32,bool),
 	DeleteTake(u32)
 }
@@ -577,6 +607,32 @@ impl FrontendThreadState {
 
 		if self.new_take_channel.push(Message::NewTake(take_node)).is_ok() {
 			self.takes.push(GuiTake{id, dev_id, unmuted: true});
+			self.id_counter += 1;
+			Ok(())
+		}
+		else {
+			Err(())
+		}
+	}
+
+	fn add_miditake(&mut self, mididev_id: usize) -> Result<(),()> {
+		let id = self.id_counter;
+
+		let take = MidiTake {
+			events: Buffer::new(1024, 512),
+			record_state: RecordState::Waiting,
+			id,
+			mididev_id,
+			unmuted: true,
+			playing: false,
+			started_recording_at: 0,
+			current_position: 0,
+			duration: 0
+		};
+		let take_node = Box::new(MidiTakeNode::new(take));
+
+		if self.new_take_channel.push(Message::NewMidiTake(take_node)).is_ok() {
+			//self.takes.push(GuiMidiTake{id, mididev_id, unmuted: true}); FIXME
 			self.id_counter += 1;
 			Ok(())
 		}
@@ -680,6 +736,7 @@ impl AudioThreadState {
 				Some(msg) => {
 					match msg {
 						Message::NewTake(take) => { println!("\ngot take"); self.takes.push_back(take); }
+						Message::NewMidiTake(take) => { println!("\ngot miditake"); self.miditakes.push_back(take); }
 						Message::SetMute(id, muted) => {
 							// FIXME this is not nice...
 							let mut cursor = self.takes.front();
@@ -791,7 +848,7 @@ impl AudioThreadState {
 
 			
 			if t.record_state == Recording {
-				t.record(client,scope,dev, 0..song_wraps_at as usize);
+				t.record(scope,dev, 0..song_wraps_at as usize);
 
 				if song_wraps {
 					println!("\nFinished recording on device {}", t.dev_id);
@@ -803,7 +860,41 @@ impl AudioThreadState {
 					println!("\nStarted recording on device {}", t.dev_id);
 					t.record_state = Recording;
 					t.started_recording_at = self.transport_position + song_wraps_at;
-					t.record(client,scope, dev, song_wraps_at as usize ..scope.n_frames() as usize);
+					t.record(scope, dev, song_wraps_at as usize ..scope.n_frames() as usize);
+				}
+			}
+
+			cursor.move_next();
+		}
+
+		// then, handle all armed MIDI takes and record into them
+		let mut cursor = self.miditakes.front();
+		while let Some(node) = cursor.get() {
+			let mut t = node.take.borrow_mut();
+			let dev = &self.mididevices[t.mididev_id];
+			// we assume that all channels have the same latencies.
+			let capture_latency = dev.in_port.get_latency_range(jack::LatencyType::Capture).1;
+		
+			let song_position = (self.song_position + self.song_length - capture_latency) % self.song_length;
+			let song_position_after = song_position + scope.n_frames();
+			let song_wraps = self.song_length <= song_position_after;
+			let song_wraps_at = min(self.song_length - song_position, scope.n_frames());
+
+			
+			if t.record_state == Recording {
+				t.record(scope,dev, 0..song_wraps_at as usize);
+
+				if song_wraps {
+					println!("\nFinished recording on device {}", t.mididev_id);
+					t.record_state = Finished;
+				}
+			}
+			else if t.record_state == Waiting {
+				if song_wraps {
+					println!("\nStarted recording on device {}", t.mididev_id);
+					t.record_state = Recording;
+					t.started_recording_at = self.transport_position + song_wraps_at;
+					t.record(scope, dev, song_wraps_at as usize ..scope.n_frames() as usize);
 				}
 			}
 
@@ -906,7 +997,7 @@ impl UserInterface {
 										frontend_thread_state.toggle_take_muted(num as usize).unwrap();
 									}
 									else {
-										frontend_thread_state.add_take(self.dev_id).unwrap();
+										frontend_thread_state.add_miditake(self.dev_id).unwrap();
 									}
 								}
 								_ => {}
@@ -961,14 +1052,4 @@ fn main() {
 		}
 	}
 	crossterm::terminal::disable_raw_mode().unwrap();
-
-	
-	std::thread::sleep(std::time::Duration::from_millis(1000));
-	println!("adding take");
-	frontend_thread_state.add_take(0).unwrap();
-	std::thread::sleep(std::time::Duration::from_millis(10000));
-	println!("adding take");
-	frontend_thread_state.add_take(0).unwrap();
-
-
 }
