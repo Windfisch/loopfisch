@@ -141,12 +141,9 @@ mod outsourced_allocation_buffer {
 			}
 		}
 
-		/// Execute func() on the next item and return its result, if there is a next item.
-		/// If there is none, return None.
+		/// Execute func() on the current item (if there is one) and return the result.
+		/// If there is none, return None. Then advances the cursor to the next item
 		pub fn next<S,F: FnOnce(&T) -> S>(&mut self, func: F) -> Option<S> {
-			self.next_ref().map(func)
-		}
-		pub fn next_ref(&mut self) -> Option<&T> {
 			if self.iter_cursor.is_null() {
 				return None;
 			}
@@ -160,7 +157,7 @@ mod outsourced_allocation_buffer {
 		
 			// Perform the actual access. This is always a valid element because no elements can
 			// be deleted.
-			let result = &buf[self.iter_index];
+			let result = func(&buf[self.iter_index]);
 		
 			// Now advance the iterator
 			if self.iter_index + 1 < buf.len() {
@@ -186,7 +183,7 @@ mod outsourced_allocation_buffer {
 			return Some(result);
 		}
 
-		pub fn peek_ref(&mut self) -> Option<&T> {
+		pub fn peek<S,F:FnOnce(&T) -> S>(&mut self, func: F) -> Option<S> {
 			if self.iter_cursor.is_null() {
 				return None;
 			}
@@ -200,7 +197,7 @@ mod outsourced_allocation_buffer {
 		
 			// Perform the actual access. This is always a valid element because no elements can
 			// be deleted.
-			let result = &buf[self.iter_index];
+			let result = func(&buf[self.iter_index]);
 
 			return Some(result);
 		}
@@ -384,33 +381,15 @@ impl MidiTake {
 
 		// iterate through the events until either a) we've reached the end or b) we've reached
 		// an event which is past the current period.
-		while let Some(event) = self.events.peek_ref() {
-			assert!(event.timestamp >= self.current_position);
-			let relative_timestamp = event.timestamp - self.current_position + range.start as u32;
-			assert!(relative_timestamp >= range.start as u32);
-			if relative_timestamp >= range.end as u32 {
-				break;
-			}
-
-			device.queue_event(
-				MidiMessage {
-					timestamp: relative_timestamp,
-					data: event.data
-				}
-			);
-
-			self.events.next_ref();
-		}
-
-		if self.events.peek_ref().is_none() {
-			// we reached the end (a), so we need to rewind and may need to play back more events
-			self.events.rewind();
-			
-			while let Some(event) = self.events.peek_ref() {
-				let relative_timestamp = event.timestamp + self.duration - self.current_position + range.start as u32;
+		let curr_pos = self.current_position;
+		let mut rewind_offset = 0;
+		loop {
+			let result = self.events.peek( |event| {
+				assert!(event.timestamp >= curr_pos);
+				let relative_timestamp = event.timestamp + rewind_offset - curr_pos + range.start as u32;
 				assert!(relative_timestamp >= range.start as u32);
 				if relative_timestamp >= range.end as u32 {
-					break;
+					return false; // signify "please break the loop"
 				}
 
 				device.queue_event(
@@ -418,22 +397,26 @@ impl MidiTake {
 						timestamp: relative_timestamp,
 						data: event.data
 					}
-				);
+				).unwrap();
 
-				self.events.next_ref();
-			}
+				return true; // signify "please continue the loop"
+			});
 
-			if self.events.peek_ref().is_none() {
-				// we've reached the end *another* time? i.e. the period size is larger than
-				// the loop length?!
-				panic!();
+			match result {
+				None => { // we hit the end of the event list
+					self.events.rewind();
+					rewind_offset += self.duration;
+				}
+				Some(true) => { // the usual case
+					self.events.next(|_|());
+				}
+				Some(false) => { // we found an event which is past the current range
+					break;
+				}
 			}
-			self.current_position = position_after - self.duration;
 		}
-		else {
-			// we haven't reached the end yet. this is the usual case
-			self.current_position = position_after;
-		}
+
+		self.current_position = position_after - rewind_offset;
 	}
 
 	pub fn rewind(&mut self) {
