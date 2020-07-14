@@ -130,10 +130,16 @@ mod outsourced_allocation_buffer {
 			}
 		}
 
+		/// Checks if the buffer is empty
+		pub fn empty(&self) -> bool {
+			// fragments is never empty, but the Vec in fragments.front() may be
+			self.fragments.front().get().unwrap().buf.borrow().len() == 0
+		}
+
 		/// Rewind the iterator state to the beginning of the stored data.
 		pub fn rewind(&mut self) {
-			if self.fragments.front().get().unwrap().buf.borrow().len() > 0 {
-				self.iter_cursor = self.fragments.front().get().unwrap(); // fragments is never empty
+			if !self.empty() {
+				self.iter_cursor = self.fragments.front().get().unwrap(); 
 				self.iter_index = 0;
 			}
 			else {
@@ -348,8 +354,11 @@ enum RecordState {
 use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListLink};
 
 struct MidiTake {
+	/// Sorted sequence of all events with timestamps between 0 and self.duration
 	events: Buffer<MidiMessage>,
+	/// Current playhead position
 	current_position: u32,
+	/// Number of frames after which the recorded events shall loop.
 	duration: u32,
 	record_state: RecordState,
 	id: u32,
@@ -360,6 +369,7 @@ struct MidiTake {
 }
 
 struct Take {
+	/// Sequence of all samples. The take's duration and playhead position are implicitly managed by the underlying Buffer.
 	samples: Vec<Buffer<f32>>,
 	record_state: RecordState,
 	id: u32,
@@ -376,7 +386,12 @@ struct GuiTake {
 }
 
 impl MidiTake {
+	/// Enumerates all events that take place in the next `range.len()` frames and puts
+	/// them into device's playback queue. The events are automatically looped every
+	/// `self.duration` frames.
 	pub fn playback(&mut self, device: &mut MidiDevice, range: std::ops::Range<usize>) {
+		assert!(!self.events.empty());
+
 		let position_after = self.current_position + range.len() as u32;
 
 		// iterate through the events until either a) we've reached the end or b) we've reached
@@ -928,19 +943,19 @@ fn main() {
 	active_client.as_client().connect_ports_by_name("system:capture_2", "loopfisch:fnord_in2").unwrap();
 	
 	let mut ui = UserInterface::new();
-	crossterm::terminal::enable_raw_mode();
+	crossterm::terminal::enable_raw_mode().unwrap();
 	loop {
 		if ui.spin(&mut frontend_thread_state).unwrap() {
 			break;
 		}
 	}
-	crossterm::terminal::disable_raw_mode();
+	crossterm::terminal::disable_raw_mode().unwrap();
 
 	
-	std::thread::sleep_ms(1000);
+	std::thread::sleep(std::time::Duration::from_millis(1000));
 	println!("adding take");
 	frontend_thread_state.add_take(0);
-	std::thread::sleep_ms(10000);
+	std::thread::sleep(std::time::Duration::from_millis(10000));
 	println!("adding take");
 	frontend_thread_state.add_take(0);
 
