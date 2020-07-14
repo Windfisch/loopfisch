@@ -59,6 +59,7 @@ mod outsourced_allocation_buffer {
 	impl<T> Drop for Buffer<T> {
 		fn drop(&mut self) {
 			println!("dropping");
+			// there is always enough space for the End request.
 			self.new_fragment_request_ringbuf.push(ThreadRequest::End).map_err(|_|()).unwrap();
 			self.thread_handle.thread().unpark();
 		}
@@ -106,8 +107,8 @@ mod outsourced_allocation_buffer {
 									link: LinkedListLink::new(),
 									buf: RefCell::new(Vec::with_capacity(capacity_increment))
 								});
+								// there is always enough space for pushing the fragment
 								incoming_producer.push(fragment).map_err(|_|()).unwrap();
-								//println!("created new fragment");
 							}
 							ThreadRequest::End => {
 								println!("helper thread exiting");
@@ -139,6 +140,7 @@ mod outsourced_allocation_buffer {
 		/// Rewind the iterator state to the beginning of the stored data.
 		pub fn rewind(&mut self) {
 			if !self.empty() {
+				// fragments is never empty, hence the unwrap()
 				self.iter_cursor = self.fragments.front().get().unwrap(); 
 				self.iter_index = 0;
 			}
@@ -198,7 +200,7 @@ mod outsourced_allocation_buffer {
 			// This is safe iif iter_cursor points to an element current in the list.
 			// Since list elements are only added, but never removed, and since iter_cursor
 			// has already belonged to the list when it was set, this is fine.
-			let mut cursor = unsafe{ self.fragments.cursor_from_ptr(self.iter_cursor) };
+			let cursor = unsafe{ self.fragments.cursor_from_ptr(self.iter_cursor) };
 			let buf = cursor.get().unwrap().buf.borrow();
 		
 			// Perform the actual access. This is always a valid element because no elements can
@@ -441,7 +443,7 @@ impl MidiTake {
 }
 
 impl Take {
-	pub fn playback(&mut self, client: &jack::Client, scope: &jack::ProcessScope, device: &mut AudioDevice, range: std::ops::Range<usize>) {
+	pub fn playback(&mut self, scope: &jack::ProcessScope, device: &mut AudioDevice, range: std::ops::Range<usize>) {
 		for (channel_buffer, channel_ports) in self.samples.iter_mut().zip(device.channels.iter_mut()) {
 			let buffer = &mut channel_ports.out_port.as_mut_slice(scope)[range.clone()];
 			for d in buffer {
@@ -479,7 +481,7 @@ impl Take {
 	}
 }
 
-fn play_silence(client: &jack::Client, scope: &jack::ProcessScope, device: &mut AudioDevice, range: std::ops::Range<usize>) {
+fn play_silence(scope: &jack::ProcessScope, device: &mut AudioDevice, range: std::ops::Range<usize>) {
 	for channel_ports in device.channels.iter_mut() {
 		let buffer = &mut channel_ports.out_port.as_mut_slice(scope)[range.clone()];
 		for d in buffer {
@@ -558,7 +560,7 @@ struct FrontendThreadState {
 }
 
 impl FrontendThreadState {
-	fn add_take(&mut self, dev_id: usize) {
+	fn add_take(&mut self, dev_id: usize) -> Result<(),()> {
 		let id = self.id_counter;
 
 		let n_channels = self.device_info[dev_id].n_channels;
@@ -572,17 +574,26 @@ impl FrontendThreadState {
 			started_recording_at: 0
 		};
 		let take_node = Box::new(TakeNode::new(take));
-		self.new_take_channel.push(Message::NewTake(take_node));
 
-		self.takes.push(GuiTake{id, dev_id, unmuted: true});
-
-		self.id_counter += 1;
+		if self.new_take_channel.push(Message::NewTake(take_node)).is_ok() {
+			self.takes.push(GuiTake{id, dev_id, unmuted: true});
+			self.id_counter += 1;
+			Ok(())
+		}
+		else {
+			Err(())
+		}
 	}
 
-	fn toggle_take_muted(&mut self, take_id: usize) {
+	fn toggle_take_muted(&mut self, take_id: usize) -> Result<(),()> {
 		let old_unmuted = self.takes[take_id].unmuted;
-		self.takes[take_id].unmuted = !old_unmuted;
-		self.new_take_channel.push(Message::SetMute(self.takes[take_id].id, old_unmuted));
+		if self.new_take_channel.push(Message::SetMute(self.takes[take_id].id, old_unmuted)).is_ok() {
+			self.takes[take_id].unmuted = !old_unmuted;
+			Ok(())
+		}
+		else {
+			Err(())
+		}
 	}
 }
 
@@ -619,7 +630,7 @@ fn create_thread_states(devices: Vec<AudioDevice>, mididevices: Vec<MidiDevice>,
 
 	return (audio_thread_state, frontend_thread_state);
 }
-
+/*
 struct RemoveUnorderedIter<'a,T,F: FnMut(&mut T) -> bool> {
 	vec: &'a mut Vec<T>,
 	i: usize,
@@ -649,7 +660,7 @@ fn remove_unordered_iter<T,F: FnMut(&mut T) -> bool>(vec: &mut Vec<T>, filter: F
 		i: 0,
 		filter
 	}
-}
+}*/
 
 impl AudioThreadState {
 	fn process_callback(&mut self, client: &jack::Client, scope: &jack::ProcessScope) -> jack::Control {
@@ -693,7 +704,7 @@ impl AudioThreadState {
 
 		// then, handle all playing takes
 		for dev in self.devices.iter_mut() {
-			play_silence(client,scope,dev,0..scope.n_frames() as usize);
+			play_silence(scope,dev,0..scope.n_frames() as usize);
 		}
 		
 		let mut cursor = self.takes.front();
@@ -712,7 +723,7 @@ impl AudioThreadState {
 
 			
 			if t.playing {
-				t.playback(client,scope,dev, 0..scope.n_frames() as usize);
+				t.playback(scope,dev, 0..scope.n_frames() as usize);
 				if song_wraps { println!("\n10/10 would rewind\n"); }
 			}
 			else if t.record_state == Recording {
@@ -721,7 +732,7 @@ impl AudioThreadState {
 					println!("\nAlmost finished recording on device {}, thus starting playback now", t.dev_id);
 					println!("Recording started at {}, now is {}", t.started_recording_at, self.transport_position + song_wraps_at as u32);
 					t.rewind();
-					t.playback(client,scope,dev, song_wraps_at..scope.n_frames() as usize);
+					t.playback(scope,dev, song_wraps_at..scope.n_frames() as usize);
 				}
 			}
 
@@ -837,9 +848,9 @@ fn letter2id(c: char) -> u32 {
 	}
 	panic!("letter2id must be called with a letter");
 }
-fn id2letter(i: u32) -> char {
-	return LETTERS[i as usize];
-}
+//fn id2letter(i: u32) -> char {
+//	return LETTERS[i as usize];
+//}
 
 struct UserInterface {
 	dev_id: usize
@@ -892,10 +903,10 @@ impl UserInterface {
 								'a'..='z' => {
 									let num = letter2id(c);
 									if num <= letter2id('l') {
-										frontend_thread_state.toggle_take_muted(num as usize);
+										frontend_thread_state.toggle_take_muted(num as usize).unwrap();
 									}
 									else {
-										frontend_thread_state.add_take(self.dev_id);
+										frontend_thread_state.add_take(self.dev_id).unwrap();
 									}
 								}
 								_ => {}
@@ -954,10 +965,10 @@ fn main() {
 	
 	std::thread::sleep(std::time::Duration::from_millis(1000));
 	println!("adding take");
-	frontend_thread_state.add_take(0);
+	frontend_thread_state.add_take(0).unwrap();
 	std::thread::sleep(std::time::Duration::from_millis(10000));
 	println!("adding take");
-	frontend_thread_state.add_take(0);
+	frontend_thread_state.add_take(0).unwrap();
 
 
 }
