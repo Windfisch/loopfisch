@@ -680,7 +680,6 @@ fn create_thread_states(devices: Vec<AudioDevice>, mididevices: Vec<MidiDevice>,
 	});
 
 	let (take_sender, take_receiver) = ringbuf::RingBuffer::<Message>::new(10).split();
-	
 
 	let frontend_thread_state = FrontendThreadState {
 		new_take_channel: take_sender,
@@ -778,10 +777,7 @@ impl AudioThreadState {
 			let song_position_after = song_position + scope.n_frames();
 			let song_wraps = self.song_length <= song_position_after;
 			let song_wraps_at = min(self.song_length - song_position, scope.n_frames()) as usize;
-			
 
-
-			
 			if t.playing {
 				t.playback(scope,dev, 0..scope.n_frames() as usize);
 				if song_wraps { println!("\n10/10 would rewind\n"); }
