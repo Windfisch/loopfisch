@@ -387,6 +387,12 @@ struct GuiTake {
 	unmuted: bool
 }
 
+struct GuiMidiTake {
+	id: u32,
+	mididev_id: usize,
+	unmuted: bool
+}
+
 impl MidiTake {
 	/// Enumerates all events that take place in the next `range.len()` frames and puts
 	/// them into device's playback queue. The events are automatically looped every
@@ -557,6 +563,7 @@ enum Message {
 	NewTake(Box<TakeNode>),
 	NewMidiTake(Box<MidiTakeNode>),
 	SetMute(u32,bool),
+	SetMidiMute(u32,bool),
 	DeleteTake(u32)
 }
 
@@ -586,6 +593,7 @@ struct FrontendThreadState {
 	device_info: Vec<AudioDeviceInfo>,
 	shared: Arc<SharedThreadState>,
 	takes: Vec<GuiTake>,
+	miditakes: Vec<GuiMidiTake>,
 	id_counter: u32
 }
 
@@ -632,7 +640,7 @@ impl FrontendThreadState {
 		let take_node = Box::new(MidiTakeNode::new(take));
 
 		if self.new_take_channel.push(Message::NewMidiTake(take_node)).is_ok() {
-			//self.takes.push(GuiMidiTake{id, mididev_id, unmuted: true}); FIXME
+			self.miditakes.push(GuiMidiTake{id, mididev_id, unmuted: true});
 			self.id_counter += 1;
 			Ok(())
 		}
@@ -645,6 +653,16 @@ impl FrontendThreadState {
 		let old_unmuted = self.takes[take_id].unmuted;
 		if self.new_take_channel.push(Message::SetMute(self.takes[take_id].id, old_unmuted)).is_ok() {
 			self.takes[take_id].unmuted = !old_unmuted;
+			Ok(())
+		}
+		else {
+			Err(())
+		}
+	}
+	fn toggle_miditake_muted(&mut self, take_id: usize) -> Result<(),()> {
+		let old_unmuted = self.miditakes[take_id].unmuted;
+		if self.new_take_channel.push(Message::SetMidiMute(self.miditakes[take_id].id, old_unmuted)).is_ok() {
+			self.miditakes[take_id].unmuted = !old_unmuted;
 			Ok(())
 		}
 		else {
@@ -669,6 +687,7 @@ fn create_thread_states(devices: Vec<AudioDevice>, mididevices: Vec<MidiDevice>,
 		device_info: devices.iter().map(|d| d.info()).collect(),
 		shared: Arc::clone(&shared),
 		takes: Vec::new(),
+		miditakes: Vec::new(),
 		id_counter: 0
 	};
 
@@ -719,6 +738,21 @@ impl AudioThreadState {
 							}
 							if cursor.get().is_none() {
 								panic!("could not find take to mute");
+							}
+						}
+						Message::SetMidiMute(id, muted) => {
+							// FIXME this is not nice...
+							let mut cursor = self.miditakes.front();
+							while let Some(node) = cursor.get() {
+								let mut t = node.take.borrow_mut();
+								if t.id == id {
+									t.unmuted = !muted;
+									break;
+								}
+								cursor.move_next();
+							}
+							if cursor.get().is_none() {
+								panic!("could not find miditake to mute");
 							}
 						}
 						_ => { unimplemented!() }
@@ -962,11 +996,18 @@ impl UserInterface {
 								}
 								'a'..='z' => {
 									let num = letter2id(c);
-									if num <= letter2id('l') {
+									if num <= letter2id('p') {
 										frontend_thread_state.toggle_take_muted(num as usize).unwrap();
 									}
+									else if num <= letter2id('l') {
+										frontend_thread_state.toggle_miditake_muted((num - letter2id('a')) as usize).unwrap();
+									}
 									else {
-										frontend_thread_state.add_miditake(self.dev_id).unwrap();
+										match c {
+											'z' => {frontend_thread_state.add_take(self.dev_id).unwrap();}
+											'x' => {frontend_thread_state.add_miditake(self.dev_id).unwrap();}
+											_ => {}
+										}
 									}
 								}
 								_ => {}
@@ -997,10 +1038,11 @@ fn main() {
 	let audiodev = AudioDevice::new(&client, 2, "fnord").unwrap();
 	let audiodev2 = AudioDevice::new(&client, 2, "dronf").unwrap();
 	let mididev = MidiDevice::new(&client, "midi").unwrap();
+	let mididev2 = MidiDevice::new(&client, "midi2").unwrap();
 	let devices = vec![audiodev, audiodev2];
-	let mididevs = vec![mididev];
+	let mididevs = vec![mididev, mididev2];
 	
-	let (mut audio_thread_state, mut frontend_thread_state) = create_thread_states(devices, mididevs, 48000*3);
+	let (mut audio_thread_state, mut frontend_thread_state) = create_thread_states(devices, mididevs, 48000*4);
 
 	let process_callback = move |client: &jack::Client, ps: &jack::ProcessScope| -> jack::Control {
 		audio_thread_state.process_callback(client, ps)
