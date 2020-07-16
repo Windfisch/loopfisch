@@ -686,37 +686,6 @@ fn create_thread_states(devices: Vec<AudioDevice>, mididevices: Vec<MidiDevice>,
 
 	return (audio_thread_state, frontend_thread_state);
 }
-/*
-struct RemoveUnorderedIter<'a,T,F: FnMut(&mut T) -> bool> {
-	vec: &'a mut Vec<T>,
-	i: usize,
-	filter: F
-}
-
-impl<T,F: FnMut(&mut T) -> bool> Iterator for RemoveUnorderedIter<'_,T,F> {
-	type Item = T;
-
-	fn next(&mut self) -> Option<T> {
-		while self.i < self.vec.len() {
-			if (self.filter)(&mut self.vec[self.i]) {
-				let item = self.vec.swap_remove(self.i);
-				return Some(item);
-			}
-			else {
-				self.i += 1;
-			}
-		}
-		return None;
-	}
-}
-
-fn remove_unordered_iter<T,F: FnMut(&mut T) -> bool>(vec: &mut Vec<T>, filter: F) -> RemoveUnorderedIter<T,F> {
-	RemoveUnorderedIter {
-		vec,
-		i: 0,
-		filter
-	}
-}*/
 
 impl AudioThreadState {
 	fn process_callback(&mut self, client: &jack::Client, scope: &jack::ProcessScope) -> jack::Control {
