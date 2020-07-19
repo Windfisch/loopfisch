@@ -334,6 +334,49 @@ impl MidiDevice {
 	}
 }
 
+struct AudioMetronome {
+	out_port: jack::Port<jack::AudioOut>,
+	volume: f32,
+	unmuted: bool
+}
+
+impl AudioMetronome {
+	pub fn new(client: &jack::Client) -> Result<AudioMetronome, jack::Error> {
+		let out_port = client.register_port("metronome", jack::AudioOut::default())?;
+		Ok(AudioMetronome {
+			out_port,
+			volume: 0.3,
+			unmuted: true
+		})
+	}
+
+	pub fn process(&mut self, position: u32, period: u32, beats: u32, scope: &jack::ProcessScope) {
+		if !self.unmuted { return; }
+		let latency = self.out_port.get_latency_range(jack::LatencyType::Playback).1;
+		let buffer = self.out_port.as_mut_slice(scope);
+		for i in 0..scope.n_frames() {
+			buffer[i as usize] = self.volume * Self::process_one(position + i + latency, period, beats);
+		}
+	}
+
+	fn process_one(position: u32, period: u32, beats: u32) -> f32 {
+		let position_in_beat = position % period;
+		let beat = position / period;
+		let emphasis = (beat % beats) == 0;
+
+		const CLICK_LENGTH: u32 = 4800;
+
+		let volume = 1.0 - min(position_in_beat, CLICK_LENGTH) as f32 / CLICK_LENGTH as f32;
+		//let volume = if position_in_beat < CLICK_LENGTH { 1.0 } else {0.0};
+		let freq = if emphasis { 880 } else { 440 };
+
+		let sawtooth: f32 = (position_in_beat as f32 / 48000.0 * freq as f32).fract();
+		let square = if sawtooth < 0.5 {0.0} else {1.0};
+
+		return square * volume;
+	}
+}
+
 struct AudioChannel {
 	in_port: jack::Port<jack::AudioIn>,
 	out_port: jack::Port<jack::AudioOut>,
@@ -684,6 +727,7 @@ enum Message {
 struct AudioThreadState {
 	devices: Vec<AudioDevice>,
 	mididevices: Vec<MidiDevice>,
+	metronome: AudioMetronome,
 	takes: LinkedList<TakeAdapter>,
 	miditakes: LinkedList<MidiTakeAdapter>,
 	new_take_channel: ringbuf::Consumer<Message>,
@@ -787,7 +831,7 @@ impl FrontendThreadState {
 	}
 }
 
-fn create_thread_states(devices: Vec<AudioDevice>, mididevices: Vec<MidiDevice>, song_length: u32) -> (AudioThreadState, FrontendThreadState) {
+fn create_thread_states(devices: Vec<AudioDevice>, mididevices: Vec<MidiDevice>, metronome: AudioMetronome, song_length: u32) -> (AudioThreadState, FrontendThreadState) {
 
 	let shared = Arc::new(SharedThreadState {
 		song_length: AtomicU32::new(1),
@@ -809,6 +853,7 @@ fn create_thread_states(devices: Vec<AudioDevice>, mididevices: Vec<MidiDevice>,
 	let audio_thread_state = AudioThreadState {
 		devices,
 		mididevices,
+		metronome,
 		takes: LinkedList::new(TakeAdapter::new()),
 		miditakes: LinkedList::new(MidiTakeAdapter::new()),
 		new_take_channel: take_receiver,
@@ -826,6 +871,8 @@ impl AudioThreadState {
 		//println!("process from thread #{:?}", std::thread::current().id());
 		use RecordState::*;
 		assert_no_alloc(||{
+
+		self.metronome.process(self.song_position, self.song_length / 8, 4, scope);
 
 
 		assert!(scope.n_frames() < self.song_length);
@@ -1153,8 +1200,10 @@ fn main() {
 	let mididev2 = MidiDevice::new(&client, "midi2").unwrap();
 	let devices = vec![audiodev, audiodev2];
 	let mididevs = vec![mididev, mididev2];
+
+	let metronome = AudioMetronome::new(&client).unwrap();
 	
-	let (mut audio_thread_state, mut frontend_thread_state) = create_thread_states(devices, mididevs, 48000*4);
+	let (mut audio_thread_state, mut frontend_thread_state) = create_thread_states(devices, mididevs, metronome, 48000*4);
 
 	let process_callback = move |client: &jack::Client, ps: &jack::ProcessScope| -> jack::Control {
 		audio_thread_state.process_callback(client, ps)
