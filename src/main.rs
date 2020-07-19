@@ -255,6 +255,34 @@ struct MidiMessage {
 	data: [u8; 3]
 }
 
+enum MidiEvent {
+	/// NoteOn(channel, note, velocity)
+	NoteOn(u8, u8, u8),
+	/// NoteOff(channel, note, velocity)
+	NoteOff(u8, u8, u8),
+	Unknown
+}
+
+impl MidiEvent {
+	pub fn parse(data: &[u8; 3]) -> MidiEvent {
+		use MidiEvent::*;
+		let kind = data[0] & 0xF0;
+		let chan = data[0] & 0x0F;
+		match kind {
+			0x90 => {
+				if data[2] > 0 {
+					NoteOn(chan, data[1], data[2])
+				}
+				else { // zero velocity note ons are treated as note offs.
+					NoteOff(chan, data[1], 0)
+				}
+			}
+			0x80 => NoteOff(chan, data[1], data[2]),
+			_ => Unknown
+		}
+	}
+}
+
 struct MidiDevice {
 	in_port: jack::Port<jack::MidiIn>,
 	out_port: jack::Port<jack::MidiOut>,
@@ -366,8 +394,10 @@ struct MidiTake {
 	id: u32,
 	mididev_id: usize,
 	unmuted: bool,
+	unmuted_old: bool,
 	playing: bool,
 	started_recording_at: u32,
+	note_registry: RefCell<MidiNoteRegistry> // this SUCKS. TODO.
 }
 
 struct Take {
@@ -379,6 +409,7 @@ struct Take {
 	unmuted: bool,
 	playing: bool,
 	started_recording_at: u32,
+
 }
 
 struct GuiTake {
@@ -393,11 +424,89 @@ struct GuiMidiTake {
 	unmuted: bool
 }
 
+struct MidiNoteRegistry {
+	playing_notes: BitArray2048
+}
+
+impl MidiNoteRegistry {
+	pub fn new() -> MidiNoteRegistry {
+		MidiNoteRegistry { playing_notes: BitArray2048::new() }
+	}
+
+	fn register_event(&mut self, data: [u8; 3]) {
+		use MidiEvent::*;
+		match MidiEvent::parse(&data) {
+			NoteOn(channel, note, _) => {
+				self.playing_notes.set(note as u32 + 128*channel as u32, true);
+			}
+			NoteOff(channel, note, _) => {
+				self.playing_notes.set(note as u32 + 128*channel as u32, false);
+			}
+			_ => {}
+		}
+	}
+
+	pub fn stop_playing(&mut self, device: &mut MidiDevice) {
+		// FIXME: queue_event could fail; better allow for a "second chance"
+		for channel in 0..16 {
+			for note in 0..128 {
+				if self.playing_notes.get(note as u32 + 128*channel as u32) {
+					device.queue_event( MidiMessage {
+						timestamp: 0,
+						data: [0x80 | channel, note, 64]
+					}).unwrap();
+				}
+			}
+		}
+		self.playing_notes = BitArray2048::new(); // clear the array
+	}
+}
+
+struct BitArray2048 {
+	storage: [u8; 256]
+}
+
+impl BitArray2048 {
+	pub fn new() -> BitArray2048 {
+		BitArray2048{ storage: [0; 256] }
+	}
+
+	fn storidx_and_mask(idx: u32) -> (usize, u8) {
+		let storidx = idx / 8;
+		let bitidx = idx % 8;
+		let mask = 1 << bitidx;
+		return (storidx as usize, mask);
+	}
+
+	pub fn set(&mut self, idx: u32, val: bool) {
+		let (storidx, mask) = Self::storidx_and_mask(idx);
+		if val {
+			self.storage[storidx] |= mask;
+		}
+		else {
+			self.storage[storidx] &= !mask;
+		}
+	}
+
+	pub fn get(&self, idx: u32) -> bool {
+		let (storidx, mask) = Self::storidx_and_mask(idx);
+		return (self.storage[storidx] & mask) != 0;
+	}
+}
+
 impl MidiTake {
 	/// Enumerates all events that take place in the next `range.len()` frames and puts
 	/// them into device's playback queue. The events are automatically looped every
 	/// `self.duration` frames.
 	pub fn playback(&mut self, device: &mut MidiDevice, range: std::ops::Range<usize>) {
+		if self.unmuted != self.unmuted_old {
+			if !self.unmuted {
+				self.note_registry.borrow_mut().stop_playing(device);
+			}
+			self.unmuted_old = self.unmuted;
+		}
+		
+
 		let position_after = self.current_position + range.len() as u32;
 
 		// iterate through the events until either a) we've reached the end or b) we've reached
@@ -405,6 +514,8 @@ impl MidiTake {
 		let curr_pos = self.current_position;
 		let mut rewind_offset = 0;
 		loop {
+			let unmuted = self.unmuted;
+			let mut note_registry = self.note_registry.borrow_mut(); // TODO this SUCKS! oh god why, rust. this whole callback thing is garbage.
 			let result = self.events.peek( |event| {
 				assert!(event.timestamp + rewind_offset >= curr_pos);
 				let relative_timestamp = event.timestamp + rewind_offset - curr_pos + range.start as u32;
@@ -413,12 +524,15 @@ impl MidiTake {
 					return false; // signify "please break the loop"
 				}
 
-				device.queue_event(
-					MidiMessage {
-						timestamp: relative_timestamp,
-						data: event.data
-					}
-				).unwrap();
+				if unmuted {
+					device.queue_event(
+						MidiMessage {
+							timestamp: relative_timestamp,
+							data: event.data
+						}
+					).unwrap();
+					note_registry.register_event(event.data);
+				}
 
 				return true; // signify "please continue the loop"
 			});
@@ -632,10 +746,12 @@ impl FrontendThreadState {
 			id,
 			mididev_id,
 			unmuted: true,
+			unmuted_old: true,
 			playing: false,
 			started_recording_at: 0,
 			current_position: 0,
-			duration: 0
+			duration: 0,
+			note_registry: RefCell::new(MidiNoteRegistry::new())
 		};
 		let take_node = Box::new(MidiTakeNode::new(take));
 
