@@ -20,10 +20,12 @@ use std::cmp::min;
 use crossterm;
 
 mod bit_array;
-use bit_array::BitArray2048;
 
 mod jack_driver;
 use jack_driver::*; // FIXME
+
+mod midi_registry;
+use midi_registry::MidiNoteRegistry;
 
 
 use assert_no_alloc::assert_no_alloc;
@@ -92,44 +94,6 @@ struct GuiMidiTake {
 	id: u32,
 	mididev_id: usize,
 	unmuted: bool
-}
-
-struct MidiNoteRegistry {
-	playing_notes: BitArray2048
-}
-
-impl MidiNoteRegistry {
-	pub fn new() -> MidiNoteRegistry {
-		MidiNoteRegistry { playing_notes: BitArray2048::new() }
-	}
-
-	fn register_event(&mut self, data: [u8; 3]) {
-		use MidiEvent::*;
-		match MidiEvent::parse(&data) {
-			NoteOn(channel, note, _) => {
-				self.playing_notes.set(note as u32 + 128*channel as u32, true);
-			}
-			NoteOff(channel, note, _) => {
-				self.playing_notes.set(note as u32 + 128*channel as u32, false);
-			}
-			_ => {}
-		}
-	}
-
-	pub fn stop_playing(&mut self, device: &mut MidiDevice) {
-		// FIXME: queue_event could fail; better allow for a "second chance"
-		for channel in 0..16 {
-			for note in 0..128 {
-				if self.playing_notes.get(note as u32 + 128*channel as u32) {
-					device.queue_event( MidiMessage {
-						timestamp: 0,
-						data: [0x80 | channel, note, 64]
-					}).unwrap();
-				}
-			}
-		}
-		self.playing_notes = BitArray2048::new(); // clear the array
-	}
 }
 
 impl MidiTake {
