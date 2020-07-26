@@ -1,7 +1,6 @@
 use jack;
 
 use crate::midi_message::{MidiEvent,MidiMessage};
-use crate::frontend_data::AudioDeviceInfo;
 
 pub struct MidiDevice {
 	pub in_port: jack::Port<jack::MidiIn>, // FIXME: these should not be public. there should be
@@ -71,6 +70,10 @@ pub struct AudioDevice {
 	pub channels: Vec<AudioChannel>
 }
 
+pub struct AudioDeviceInfo {
+	pub n_channels: usize
+}
+
 impl AudioDevice {
 	pub fn info(&self) -> AudioDeviceInfo {
 		return AudioDeviceInfo {
@@ -85,3 +88,22 @@ impl AudioDevice {
 		Ok(dev)
 	}
 }
+
+pub struct Notifications;
+impl jack::NotificationHandler for Notifications {
+	fn thread_init(&self, _: &jack::Client) {
+		println!("JACK: thread init");
+	}
+
+	fn latency(&mut self, _: &jack::Client, _mode: jack::LatencyType) {
+		println!("latency callback from thread #{:?}", std::thread::current().id());
+	}
+
+	fn shutdown(&mut self, status: jack::ClientStatus, reason: &str) {
+		println!(
+				"JACK: shutdown with status {:?} because \"{}\"",
+				status, reason
+				);
+	}
+}
+
