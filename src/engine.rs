@@ -411,7 +411,7 @@ impl AudioThreadState {
 
 pub struct Engine {
 	frontend_thread_state: FrontendThreadState,
-	client: Box<dyn Drop>
+	_client: Box<dyn Drop> // this is to ensure that the client lives as long as the Engine.
 }
 
 impl Engine {
@@ -434,7 +434,7 @@ pub fn launch() -> Engine {
 
 	let metronome = AudioMetronome::new(&client).unwrap();
 	
-	let (mut audio_thread_state, mut frontend_thread_state) = create_thread_states(devices, mididevs, metronome, client.sample_rate() as u32 * 4);
+	let (mut audio_thread_state, frontend_thread_state) = create_thread_states(devices, mididevs, metronome, client.sample_rate() as u32 * 4);
 
 	let process_callback = move |client: &jack::Client, ps: &jack::ProcessScope| -> jack::Control {
 		audio_thread_state.process_callback(client, ps)
@@ -449,7 +449,7 @@ pub fn launch() -> Engine {
 
 	return Engine {
 		frontend_thread_state,
-		client: Box::new(active_client)
+		_client: Box::new(active_client)
 	}
 }
 
@@ -586,11 +586,18 @@ impl MidiTake {
 				else {
 					let data: [u8;3] = event.bytes.try_into().unwrap();
 					let timestamp = event.time - range.start as u32 + self.duration;
-					self.events.push( MidiMessage {
+					
+					let result = self.events.push( MidiMessage {
 						timestamp,
 						data
 					});
 					// TODO: assert that this is monotonic
+
+					if result.is_err() {
+						//log_error("Failed to add MIDI event to already-full MIDI queue! Dropping it...");
+						// FIXME
+						panic!("Failed to add MIDI event to already-full MIDI queue!");
+					}
 				}
 			}
 		}
@@ -632,7 +639,11 @@ impl Take {
 		for (channel_buffer, channel_ports) in self.samples.iter_mut().zip(device.channels.iter()) {
 			let data = &channel_ports.in_port.as_slice(scope)[range.clone()];
 			for d in data {
-				channel_buffer.push(*d);
+				let err = channel_buffer.push(*d).is_err();
+				if err {
+					// FIXME proper error handling, such as marking the take as stale, dropping it.
+					panic!("Failed to add audio sample to already-full sample queue!");
+				}
 			}
 		}
 	}

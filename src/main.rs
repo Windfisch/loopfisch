@@ -23,8 +23,6 @@ mod outsourced_allocation_buffer;
 mod user_interface;
 use user_interface::UserInterface;
 
-use crossterm;
-
 
 #[cfg(debug_assertions)]
 #[global_allocator]
@@ -45,11 +43,9 @@ fn main() {
 	let frontend_thread_state = engine.get_frontend_thread_state();
 
 	let mut ui = UserInterface::new();
-	crossterm::terminal::enable_raw_mode().unwrap();
 	loop {
 		if ui.spin(frontend_thread_state).unwrap() {
 			break;
 		}
 	}
-	crossterm::terminal::disable_raw_mode().unwrap();
 }

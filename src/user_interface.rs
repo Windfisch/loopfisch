@@ -1,4 +1,4 @@
-use crate::engine::{FrontendThreadState, SharedThreadState};
+use crate::engine::FrontendThreadState;
 
 use std::sync::atomic::AtomicBool;
 

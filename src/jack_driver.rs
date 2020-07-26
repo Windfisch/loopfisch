@@ -1,6 +1,6 @@
 use jack;
 
-use crate::midi_message::{MidiEvent,MidiMessage};
+use crate::midi_message::MidiMessage;
 
 pub struct MidiDevice {
 	pub in_port: jack::Port<jack::MidiIn>, // FIXME: these should not be public. there should be
@@ -60,8 +60,6 @@ impl AudioChannel {
 	fn new(client: &jack::Client, name: &str, num: u32) -> Result<AudioChannel, jack::Error> {
 		let in_port = client.register_port(&format!("{}_in{}", name, num), jack::AudioIn::default())?;
 		let out_port = client.register_port(&format!("{}_out{}", name, num), jack::AudioOut::default())?;
-		//client.connect_ports(&in_port, &client.port_by_name(&format!("system:capture_{}", num)).expect("could not find port")).expect("could not connect capture port");
-		//client.connect_ports(&out_port, &client.port_by_name(&format!("system:playback_{}", num)).expect("could not find port")).expect("could not connect playback port");
 		return Ok( AudioChannel { in_port, out_port });
 	}
 }
