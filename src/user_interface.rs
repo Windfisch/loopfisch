@@ -1,6 +1,8 @@
-use crate::engine::FrontendThreadState;
+use crate::engine::{FrontendThreadState, GuiTake};
 
 use std::sync::atomic::AtomicBool;
+
+use std::collections::HashMap;
 
 static INSTANCE_EXISTS: AtomicBool = AtomicBool::new(false);
 
@@ -15,9 +17,29 @@ fn letter2id(c: char) -> u32 {
 //	return LETTERS[i as usize];
 //}
 
+struct DevicePair {
+	audio_dev: Option<usize>,
+	midi_dev: Option<usize>
+}
+
 /// Very basic text mode user interface.
 pub struct UserInterface {
-	dev_id: usize
+	dev_id: usize,
+	take_id: usize,
+	device_map: Vec<DevicePair>,
+	take_supplement: HashMap<u32, TakeSupplement>
+}
+
+struct TakeSupplement {
+	marked: bool
+}
+
+impl Default for TakeSupplement {
+	fn default() -> Self {
+		return TakeSupplement {
+			marked: false
+		}
+	}
 }
 
 impl Drop for UserInterface {
@@ -25,6 +47,20 @@ impl Drop for UserInterface {
 		print!("\r\n--- disabling terminal raw mode ---\r\n");
 		crossterm::terminal::disable_raw_mode().unwrap();
 		INSTANCE_EXISTS.store(false, std::sync::atomic::Ordering::Relaxed);
+	}
+}
+
+fn hilight(s: &str, hilight: bool, semi: bool) -> crossterm::style::StyledContent<String> {
+	use crossterm::style::Styler;
+	use crossterm::style::Colorize;
+	if hilight {
+		return s.to_owned().negative();
+	}
+	else if semi {
+		return s.to_owned().on_grey();
+	}
+	else {
+		return s.to_owned().reset();
 	}
 }
 
@@ -36,7 +72,14 @@ impl UserInterface {
 
 		crossterm::terminal::enable_raw_mode().unwrap();
 		UserInterface {
-			dev_id: 0
+			dev_id: 0,
+			take_id: 0,
+			device_map: vec![ // FIXME configure
+				DevicePair{ audio_dev: Some(0), midi_dev: Some(0) },
+				DevicePair{ audio_dev: Some(1), midi_dev: None },
+				DevicePair{ audio_dev: None   , midi_dev: Some(1) },
+			],
+			take_supplement: HashMap::new()
 		}
 	}
 
@@ -45,6 +88,7 @@ impl UserInterface {
 		use crossterm::cursor::*;
 		use crossterm::terminal::*;
 		use crossterm::*;
+
 		execute!( stdout(),
 			Clear(ClearType::All),
 			MoveTo(0,0)
@@ -55,7 +99,43 @@ impl UserInterface {
 		let transport_position = frontend_thread_state.shared.transport_position.load(std::sync::atomic::Ordering::Relaxed);
 		print!("Transport position: {}     \r\n", transport_position);
 		print!("Song position: {:5.1}% {:2x} {:1} {}      \r\n", (song_position as f32 / song_length as f32) * 100.0, 256*song_position / song_length, 8 * song_position / song_length, song_position);
-		print!("Selected device: {}    \r\n", self.dev_id);
+		print!("\r\n");
+
+		for (i,dev) in frontend_thread_state.devices().iter().enumerate() {
+			print!("{:10} | ", hilight(&dev.info().name, i == self.dev_id, false));
+		}
+		print!("\r\n\n");
+		for j in 0..26 {
+			for (i,dev) in frontend_thread_state.devices().iter().enumerate() {
+				let label =
+					if dev.takes().len() > j {
+						let take = &dev.takes()[j];
+						let suppl = self.take_supplement.get(&take.id);
+						let marked = if let Some(s) = suppl { s.marked } else { false };
+						let letter = LETTERS[j];
+						let label = format!("({:1}) #{}", letter, take.id);
+						let selected = i == self.dev_id && j == self.take_id; // FIXME
+						hilight(&label, selected, marked)
+					}
+					else {
+						hilight("", false, false)
+					};
+				print!("{:10} | ", label);
+			}
+			print!("\r\n");
+		}
+
+
+	}
+
+	fn current_take<'a>(&self, frontend_thread_state: &'a FrontendThreadState) -> Option<&'a GuiTake> {
+		if self.dev_id < frontend_thread_state.devices().len() {
+			let d = &frontend_thread_state.devices()[self.dev_id];
+			if self.take_id < d.takes().len() {
+				return Some(&d.takes()[self.take_id]);
+			}
+		}
+		return None;
 	}
 
 	fn handle_input(&mut self, frontend_thread_state: &mut FrontendThreadState) -> crossterm::Result<bool> {
@@ -79,16 +159,24 @@ impl UserInterface {
 								}
 								'a'..='z' => {
 									let num = letter2id(c);
-									if num <= letter2id('p') {
-										frontend_thread_state.toggle_take_muted(num as usize).unwrap();
-									}
-									else if num <= letter2id('l') {
-										frontend_thread_state.toggle_miditake_muted((num - letter2id('a')) as usize).unwrap();
+									if num <= letter2id('l') {
+										self.take_id = num as usize
 									}
 									else {
 										match c {
 											'z' => {frontend_thread_state.add_take(self.dev_id).unwrap();}
 											'x' => {frontend_thread_state.add_miditake(self.dev_id).unwrap();}
+											'v' => {
+												if let Some(t) = self.current_take(frontend_thread_state) {
+													let ent = self.take_supplement.entry(t.id).or_default();
+													ent.marked = !ent.marked;
+												}
+											}
+											'c' => {
+												for ent in self.take_supplement.iter_mut() {
+													ent.1.marked = false
+												}
+											}
 											_ => {}
 										}
 									}

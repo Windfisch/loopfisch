@@ -7,6 +7,8 @@ pub struct MidiDevice {
 	pub out_port: jack::Port<jack::MidiOut>, // an abstraction layer around the jack driver.
 
 	out_buffer: smallvec::SmallVec<[(MidiMessage, usize); 128]>,
+
+	name: String
 }
 
 impl MidiDevice {
@@ -45,9 +47,16 @@ impl MidiDevice {
 		let dev = MidiDevice {
 			in_port,
 			out_port,
-			out_buffer: smallvec::SmallVec::new()
+			out_buffer: smallvec::SmallVec::new(),
+			name: name.into()
 		};
 		Ok(dev)
+	}
+
+	pub fn info(&self) -> MidiDeviceInfo {
+		MidiDeviceInfo {
+			name: self.name.clone()
+		}
 	}
 }
 
@@ -65,23 +74,31 @@ impl AudioChannel {
 }
 
 pub struct AudioDevice {
-	pub channels: Vec<AudioChannel>
+	pub channels: Vec<AudioChannel>,
+	name: String
 }
 
 pub struct AudioDeviceInfo {
-	pub n_channels: usize
+	pub n_channels: usize,
+	pub name: String
+}
+
+pub struct MidiDeviceInfo {
+	pub name: String
 }
 
 impl AudioDevice {
 	pub fn info(&self) -> AudioDeviceInfo {
 		return AudioDeviceInfo {
-			n_channels: self.channels.len()
+			n_channels: self.channels.len(),
+			name: self.name.clone()
 		};
 	}
 
 	pub fn new(client: &jack::Client, n_channels: u32, name: &str) -> Result<AudioDevice, jack::Error> {
 		let dev = AudioDevice {
-			channels: (0..n_channels).map(|channel| AudioChannel::new(client, name, channel+1)).collect::<Result<_,_>>()?
+			channels: (0..n_channels).map(|channel| AudioChannel::new(client, name, channel+1)).collect::<Result<_,_>>()?,
+			name: name.into()
 		};
 		Ok(dev)
 	}

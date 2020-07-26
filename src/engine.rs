@@ -80,20 +80,42 @@ pub struct SharedThreadState {
 	pub transport_position: AtomicU32,
 }
 
+pub struct GuiAudioDevice {
+	info: AudioDeviceInfo,
+	takes: Vec<GuiTake>,
+}
+
+impl GuiAudioDevice {
+	pub fn info(&self) -> &AudioDeviceInfo { &self.info }
+	pub fn takes(&self) -> &Vec<GuiTake> { &self.takes }
+}
+
+pub struct GuiMidiDevice {
+	info: MidiDeviceInfo,
+	takes: Vec<GuiMidiTake>,
+}
+
+impl GuiMidiDevice {
+	pub fn info(&self) -> &MidiDeviceInfo { &self.info }
+	pub fn takes(&self) -> &Vec<GuiMidiTake> { &self.takes }
+}
+
 pub struct FrontendThreadState {
 	new_take_channel: ringbuf::Producer<Message>,
-	device_info: Vec<AudioDeviceInfo>,
+	devices: Vec<GuiAudioDevice>,
+	mididevices: Vec<GuiMidiDevice>,
 	pub shared: Arc<SharedThreadState>,
-	takes: Vec<GuiTake>,
-	miditakes: Vec<GuiMidiTake>,
 	id_counter: u32
 }
 
 impl FrontendThreadState {
+	pub fn devices(&self) -> &Vec<GuiAudioDevice> { &self.devices}
+	pub fn mididevices(&self) -> &Vec<GuiMidiDevice> { &self.mididevices}
+
 	pub fn add_take(&mut self, dev_id: usize) -> Result<(),()> {
 		let id = self.id_counter;
 
-		let n_channels = self.device_info[dev_id].n_channels;
+		let n_channels = self.devices[dev_id].info.n_channels;
 		let take = Take {
 			samples: (0..n_channels).map(|_| Buffer::new(1024*8,512*8)).collect(),
 			record_state: RecordState::Waiting,
@@ -106,7 +128,7 @@ impl FrontendThreadState {
 		let take_node = Box::new(TakeNode::new(take));
 
 		if self.new_take_channel.push(Message::NewTake(take_node)).is_ok() {
-			self.takes.push(GuiTake{id, dev_id, unmuted: true});
+			self.devices[dev_id].takes.push(GuiTake{id, dev_id, unmuted: true});
 			self.id_counter += 1;
 			Ok(())
 		}
@@ -134,7 +156,7 @@ impl FrontendThreadState {
 		let take_node = Box::new(MidiTakeNode::new(take));
 
 		if self.new_take_channel.push(Message::NewMidiTake(take_node)).is_ok() {
-			self.miditakes.push(GuiMidiTake{id, mididev_id, unmuted: true});
+			self.mididevices[mididev_id].takes.push(GuiMidiTake{id, mididev_id, unmuted: true});
 			self.id_counter += 1;
 			Ok(())
 		}
@@ -143,20 +165,22 @@ impl FrontendThreadState {
 		}
 	}
 
-	pub fn toggle_take_muted(&mut self, take_id: usize) -> Result<(),()> {
-		let old_unmuted = self.takes[take_id].unmuted;
-		if self.new_take_channel.push(Message::SetMute(self.takes[take_id].id, old_unmuted)).is_ok() {
-			self.takes[take_id].unmuted = !old_unmuted;
+	pub fn toggle_take_muted(&mut self, dev_id: usize, take_id: usize) -> Result<(),()> {
+		let take = &mut self.devices[dev_id].takes[take_id];
+		let old_unmuted = take.unmuted;
+		if self.new_take_channel.push(Message::SetMute(take.id, old_unmuted)).is_ok() {
+			take.unmuted = !old_unmuted;
 			Ok(())
 		}
 		else {
 			Err(())
 		}
 	}
-	pub fn toggle_miditake_muted(&mut self, take_id: usize) -> Result<(),()> {
-		let old_unmuted = self.miditakes[take_id].unmuted;
-		if self.new_take_channel.push(Message::SetMidiMute(self.miditakes[take_id].id, old_unmuted)).is_ok() {
-			self.miditakes[take_id].unmuted = !old_unmuted;
+	pub fn toggle_miditake_muted(&mut self, dev_id: usize, take_id: usize) -> Result<(),()> {
+		let take = &mut self.mididevices[dev_id].takes[take_id];
+		let old_unmuted = take.unmuted;
+		if self.new_take_channel.push(Message::SetMidiMute(take.id, old_unmuted)).is_ok() {
+			take.unmuted = !old_unmuted;
 			Ok(())
 		}
 		else {
@@ -177,10 +201,9 @@ pub fn create_thread_states(devices: Vec<AudioDevice>, mididevices: Vec<MidiDevi
 
 	let frontend_thread_state = FrontendThreadState {
 		new_take_channel: take_sender,
-		device_info: devices.iter().map(|d| d.info()).collect(),
+		devices: devices.iter().map(|d| GuiAudioDevice { info: d.info(), takes: Vec::new() } ).collect(),
+		mididevices: mididevices.iter().map(|d| GuiMidiDevice { info: d.info(), takes: Vec::new() } ).collect(),
 		shared: Arc::clone(&shared),
-		takes: Vec::new(),
-		miditakes: Vec::new(),
 		id_counter: 0
 	};
 
