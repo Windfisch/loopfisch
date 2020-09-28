@@ -148,7 +148,7 @@ body {
   <body>
     <h1>Hello World!</h1>
     <div id="app">
-		<synth name="Deepmind 13" v-bind:chains="[ { 'name': 'foo'},{ name: 'bar'}]"> </synth>
+		<synth v-for="synth in synths" v-bind:name="synth.name" v-bind:chains="synth.chains"> </synth>
     </div>
 
     
