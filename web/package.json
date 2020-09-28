@@ -1,0 +1,27 @@
+{
+  "name": "rocket-vue-longpoll",
+  "version": "1.0.0",
+  "description": "Demo application for long polling with Rust, Rocket and Vue",
+  "private": "true",
+  "author": "Florian Jung",
+  "license": "MIT",
+  "scripts": {
+    "build": "webpack --mode=production",
+    "dev": "webpack --mode=development",
+    "serve": "webpack-dev-server"
+  },
+  "dependencies": {
+    "axios": "^0.20.0",
+    "copy-webpack-plugin": "^6.1.0",
+    "vue": "^2.6.12",
+    "webpack": "^4.44.1",
+    "webpack-cli": "^3.3.12",
+    "webpack-dev-server": "^3.11.0"
+  },
+  "devDependencies": {
+    "css-loader": "^4.3.0",
+    "vue-loader": "^15.9.3",
+    "vue-style-loader": "^4.1.2",
+    "vue-template-compiler": "^2.6.12"
+  }
+}

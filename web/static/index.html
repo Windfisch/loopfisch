@@ -1,0 +1,157 @@
+<!doctype html>
+<html>
+
+<style>
+body {
+	font-family: sans-serif;
+}
+
+.synthbox {
+	border-top-left-radius:1.5em;
+	border-bottom-right-radius:1.5em;
+	border-top-right-radius:0.4em;
+	border-bottom-left-radius:0.4em;
+	float: left;
+	margin: 1em;
+	padding-top: 0;
+	padding: 1em;
+	width: 20em;
+	//height: 25em;
+	background: #eee;
+}
+.chainbox {
+	margin: 0.5em;
+	margin-right: -1em;
+	padding: 0.5em;
+	background: #ddd;
+	border-top-left-radius:0.3em;
+	border-bottom-left-radius:0.3em;
+}
+.chainbox:first-of-type {
+	border-top-left-radius:1.5em;
+}
+.chainbox:last-of-type {
+	border-bottom-left-radius:1.5em;
+}
+.synthbox h1 {
+	font-size: 1.5em;
+	margin-top: 0;
+}
+.chainbox h1 {
+	font-size: 1em;
+}
+.takebox {
+	border-top-left-radius:1.5em;
+	border-bottom-left-radius:1.5em;
+	height: 2.0em;
+	background: #ccc;
+	/*margin-right: -0.5em;*/
+	display: flex;
+	align-items: center;
+	padding: 0.2em;
+}
+.takebox * {
+	margin-left: 0.3em;
+	margin-right: 0.3em;
+	flex-grow: 0;
+}
+.header {
+	height: 2em;
+	display: flex;
+	align-items: center;
+	padding: 0.2em;
+}
+.header * {
+	flex-grow: 0;
+}
+.circle {
+    width: 1em;
+    height: 1em;
+    border-radius: 50%;
+    border: 0;
+    background-color: red;
+	margin-right:0.2em;
+	margin-left:0.2em;
+}
+.btn {
+	height: 2em;
+	width: 2em;
+	background: #f00
+}
+.right {
+	float: right;
+}
+.midi {
+	--bgcolor: lightblue;
+	background-color: blue;
+}
+.muted {
+	--bgcolor: lightgray;
+	background-color: gray;
+}
+.audio {
+	--bgcolor: #fcc;
+	background-color: #f00;
+}
+.song {
+	--bgcolor: #fff;
+	background-color: #000;
+}
+.ten {
+    background-image:
+        linear-gradient(150deg, transparent 50%, var(--bgcolor) 50%),
+        linear-gradient(90deg, var(--bgcolor) 50%, transparent 50%);
+        /*linear-gradient(126deg, transparent 50%, lightblue 50%),
+        linear-gradient(90deg, lightblue 50%, transparent 50%);*/
+}
+@keyframes blink { 
+   50% {
+     background-color: gray;
+	 --bgcolor: lightgray;
+   } 
+}
+.blinking { /*or other element you want*/
+    animation: blink .5s step-end infinite alternate;
+}
+.topbar {
+	/*border-top-left-radius:1.5em;
+	border-bottom-left-radius:1.5em;*/
+	height: 5.0em;
+	background: #bfc;
+	display: flex;
+	align-items: center;
+	padding: 0.2em;
+	border-radius: 1em;
+}
+.topbarstack {
+	display: flex;
+	flex-direction: column;
+}
+.topbarstackentry {
+	display: flex;
+	flex-direction: row;
+	align-items:center;
+	height: 2.0em;
+	margin-top: 0.3em;
+	margin-bottom: 0.3em;
+}
+.topbar * {
+	margin-left: 0.3em;
+	margin-right: 0.3em;
+	flex-grow: 0;
+}
+</style>
+
+  <head>
+    <title>Getting Started</title>
+  </head>
+  <body>
+    <h1>Hello World!</h1>
+    <div id="app">
+		<synth name="Deepmind 13" v-bind:chains="[ { 'name': 'foo'},{ name: 'bar'}]"> </synth>
+    </div>
+
+    
+	<script src="main.js"></script>
+  </body>
+</html>
