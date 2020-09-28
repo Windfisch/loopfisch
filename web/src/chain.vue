@@ -2,6 +2,15 @@
 module.exports = {
 	props: ['name', 'takes'],
 	methods: {
+		has_midi_takes() {
+			return this.takes.filter(t => t.midi == true).length > 0;
+		},
+		has_audio_takes() {
+			return this.takes.filter(t => t.audio == true).length > 0;
+		},
+		needs_show_midi_button() {
+			return this.has_midi_takes() && this.has_audio_takes()
+		},
 		showhidemidi: function(event) {
 			this.show_midi = !this.show_midi;
 		},
@@ -46,7 +55,7 @@ module.exports = {
 			<div class="header">
 				<h1>{{name}}</h1>
 				<div style="flex-grow: 2"></div>
-				<button v-on:click="showhidemidi">{{ show_midi ? 'hide midi' : 'show midi' }}</button>
+				<button v-if="needs_show_midi_button()" v-on:click="showhidemidi">{{ show_midi ? 'hide midi' : 'show midi' }}</button>
 				<div class="circle" style="background-color: blue"></div>
 				<div class="circle"></div>
 			</div>
