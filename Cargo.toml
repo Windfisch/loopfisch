@@ -14,3 +14,12 @@ ringbuf = "0.2.1"
 intrusive-collections = "0.9.0"
 crossterm = "0.17"
 smallvec = "1.4"
+rocket = {git="https://github.com/SergioBenitez/Rocket", branch="master"}
+rocket_contrib = {git="https://github.com/SergioBenitez/Rocket", branch="master"}
+async-std = {version="1.6.3", features=["unstable"]}
+serde = {version = "1", features=["derive"]}
+serde_json = "1"
+tokio = "0.2"
+
+[patch.crates-io]
+rocket = {git="https://github.com/SergioBenitez/Rocket", branch="master"}

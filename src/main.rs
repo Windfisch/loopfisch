@@ -22,6 +22,11 @@ mod midi_registry;
 mod outsourced_allocation_buffer;
 mod user_interface;
 use user_interface::UserInterface;
+use tokio;
+
+mod rest_api;
+
+#[macro_use] extern crate rocket;
 
 
 #[cfg(debug_assertions)]
@@ -35,17 +40,28 @@ static A: assert_no_alloc::AllocDisabler = assert_no_alloc::AllocDisabler;
 
 
 
-
-fn main() {
+#[rocket::main]
+async fn main() {
     println!("Hello, world!");
 
-	let mut engine = engine::launch();
-	let frontend_thread_state = engine.get_frontend_thread_state();
+	let engine = engine::launch();
+	//let frontend_thread_state = engine.get_frontend_thread_state();
+
+	/*let mut rt = tokio::runtime::Builder::new()
+		.threaded_scheduler()
+		.enable_all()
+		.build()
+		.unwrap();*/
+
+	rest_api::launch_server(engine).await;
+	//rt.block_on(rest_api::launch_server(frontend_thread_state));
+	return;
+/*
 
 	let mut ui = UserInterface::new();
 	loop {
 		if ui.spin(frontend_thread_state).unwrap() {
 			break;
 		}
-	}
+	}*/
 }

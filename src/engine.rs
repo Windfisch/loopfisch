@@ -434,7 +434,7 @@ impl AudioThreadState {
 
 pub struct Engine {
 	frontend_thread_state: FrontendThreadState,
-	_client: Box<dyn Drop> // this is to ensure that the client lives as long as the Engine.
+	_client: Box<dyn Drop + Send> // this is to ensure that the client lives as long as the Engine.
 }
 
 impl Engine {
