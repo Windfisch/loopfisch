@@ -337,8 +337,10 @@ fn patch_synth_(synths: &mut Vec<Synth>, patch: &SynthPatch, check: bool) -> Res
 		if let Some(chains) = &patch.chains {
 			patch_chains_(&mut synth_to_patch.chains, chains, check)?;
 		}
-		if let Some(name) = &patch.name {
-			synth_to_patch.name = name.clone();
+		if !check {
+			if let Some(name) = &patch.name {
+				synth_to_patch.name = name.clone();
+			}
 		}
 
 		Ok(())
@@ -361,8 +363,10 @@ fn patch_chain_(chains: &mut Vec<Chain>, patch: &ChainPatch, check: bool) -> Res
 		if let Some(takes) = &patch.takes {
 			patch_takes_(&mut chain_to_patch.takes, takes, check)?;
 		}
-		if let Some(name) = &patch.name {
-			chain_to_patch.name = name.clone();
+		if !check {
+			if let Some(name) = &patch.name {
+				chain_to_patch.name = name.clone();
+			}
 		}
 
 		Ok(())
@@ -381,16 +385,18 @@ fn patch_takes_(takes: &mut Vec<Take>, patch: &Vec<TakePatch>, check: bool) -> R
 
 fn patch_take_(takes: &mut Vec<Take>, patch: &TakePatch, check: bool) -> Result<(), Status> {
 	if let Some(take_to_patch) = takes.iter_mut().find(|s| s.id == patch.id) {
-		if let Some(name) = &patch.name {
-			take_to_patch.name = name.clone();
-		}
-		if let Some(muted) = patch.muted {
-			// TODO: mute take immediately, communicate with the engine.
-			take_to_patch.muted = muted;
-		}
-		if let Some(muted_scheduled) = patch.muted_scheduled {
-			// TODO: schedule mute, communicate with the engine.
-			take_to_patch.muted_scheduled = muted_scheduled;
+		if !check {
+			if let Some(name) = &patch.name {
+				take_to_patch.name = name.clone();
+			}
+			if let Some(muted) = patch.muted {
+				// TODO: mute take immediately, communicate with the engine.
+				take_to_patch.muted = muted;
+			}
+			if let Some(muted_scheduled) = patch.muted_scheduled {
+				// TODO: schedule mute, communicate with the engine.
+				take_to_patch.muted_scheduled = muted_scheduled;
+			}
 		}
 
 		Ok(())
