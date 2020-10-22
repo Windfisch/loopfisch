@@ -16,7 +16,7 @@ use std::path::PathBuf;
 
 use rocket::{Request, Response};
 use rocket::fairing::{Fairing, Info, Kind};
-use rocket::http::{Header, ContentType};
+use rocket::http::{Status, Header, ContentType};
 use std::io::Cursor;
 
 use serde::{Serialize,Deserialize};
@@ -253,86 +253,86 @@ struct TakePatch {
 
 
 #[patch("/synths", data="<patch>")]
-async fn patch_synths(state: State<'_, GuiState>, patch: Json<Vec<SynthPatch>>) -> Result<&str, &str> {
+async fn patch_synths(state: State<'_, GuiState>, patch: Json<Vec<SynthPatch>>) -> Result<(), Status> {
 	let mut guard = state.synths.lock().await;
 	patch_synths_(&mut *guard, &*patch, true)?;
 	patch_synths_(&mut *guard, &*patch, false).unwrap();
-	Ok("ok")
+	Ok(())
 }
 
 #[patch("/synths/<id>", data="<patch>")]
-async fn patch_synth(state: State<'_, GuiState>, id: u32, patch: Json<SynthPatch>) -> Result<&str, &str> {
+async fn patch_synth(state: State<'_, GuiState>, id: u32, patch: Json<SynthPatch>) -> Result<(), Status> {
 	if id != patch.id {
-		return Err("bad id"); //422
+		return Err(Status::UnprocessableEntity); //422
 	}
 	let mut guard = state.synths.lock().await;
 	patch_synth_(&mut *guard, &*patch, true)?;
 	patch_synth_(&mut *guard, &*patch, false).unwrap();
-	Ok("ok")
+	Ok(())
 }
 
 #[patch("/synths/<synthid>/chains", data="<patch>")]
-async fn patch_chains(state: State<'_, GuiState>, synthid: u32, patch: Json<Vec<ChainPatch>>) -> Result<&str, &str> {
+async fn patch_chains(state: State<'_, GuiState>, synthid: u32, patch: Json<Vec<ChainPatch>>) -> Result<(), Status> {
 	let mut guard = state.synths.lock().await;
 	if let Some(synth) = guard.iter_mut().find(|s| s.id == synthid) {
 		patch_chains_(&mut synth.chains, &*patch, true)?;
 		patch_chains_(&mut synth.chains, &*patch, false).unwrap();
-		return Ok("ok");
+		return Ok(());
 	}
-	Err("404")
+	Err(Status::NotFound)
 }
 
 #[patch("/synths/<synthid>/chains/<chainid>", data="<patch>")]
-async fn patch_chain(state: State<'_, GuiState>, synthid: u32, chainid: u32, patch: Json<ChainPatch>) -> Result<&str, &str> {
+async fn patch_chain(state: State<'_, GuiState>, synthid: u32, chainid: u32, patch: Json<ChainPatch>) -> Result<(), Status> {
 	let mut guard = state.synths.lock().await;
 	if let Some(synth) = guard.iter_mut().find(|s| s.id == synthid) {
 		if chainid != patch.id {
-			return Err("bad id");
+			return Err(Status::UnprocessableEntity);
 		}
 		patch_chain_(&mut synth.chains, &*patch, true)?;
 		patch_chain_(&mut synth.chains, &*patch, false).unwrap();
-		return Ok("ok");
+		return Ok(());
 	}
-	Err("404")
+	Err(Status::NotFound)
 }
 
 #[patch("/synths/<synthid>/chains/<chainid>/takes", data="<patch>")]
-async fn patch_takes(state: State<'_, GuiState>, synthid: u32, chainid: u32, patch: Json<Vec<TakePatch>>) -> Result<&str, &str> {
+async fn patch_takes(state: State<'_, GuiState>, synthid: u32, chainid: u32, patch: Json<Vec<TakePatch>>) -> Result<(), Status> {
 	let mut guard = state.synths.lock().await;
 	if let Some(synth) = guard.iter_mut().find(|s| s.id == synthid) {
 		if let Some(chain) = synth.chains.iter_mut().find(|c| c.id == chainid) {
 			patch_takes_(&mut chain.takes, &*patch, true)?;
 			patch_takes_(&mut chain.takes, &*patch, false).unwrap();
-			return Ok("ok");
+			return Ok(());
 		}
 	}
-	Err("404")
+	Err(Status::NotFound)
 }
 
 #[patch("/synths/<synthid>/chains/<chainid>/takes/<takeid>", data="<patch>")]
-async fn patch_take(state: State<'_, GuiState>, synthid: u32, chainid: u32, takeid: u32, patch: Json<TakePatch>) -> Result<&str, &str> {
+async fn patch_take(state: State<'_, GuiState>, synthid: u32, chainid: u32, takeid: u32, patch: Json<TakePatch>) -> Result<(), Status> {
 	let mut guard = state.synths.lock().await;
 	if let Some(synth) = guard.iter_mut().find(|s| s.id == synthid) {
 		if let Some(chain) = synth.chains.iter_mut().find(|s| s.id == chainid) {
 			if takeid != patch.id {
-				return Err("bad id");
+				return Err(Status::UnprocessableEntity);
 			}
 			patch_take_(&mut chain.takes, &*patch, true)?;
 			patch_take_(&mut chain.takes, &*patch, false).unwrap();
-			return Ok("ok");
+			return Ok(());
 		}
 	}
-	Err("404")
+	Err(Status::NotFound)
 }
 
-fn patch_synths_(synths: &mut Vec<Synth>, patch: &Vec<SynthPatch>, check: bool) -> Result<&'static str, &'static str> {
+fn patch_synths_(synths: &mut Vec<Synth>, patch: &Vec<SynthPatch>, check: bool) -> Result<(), Status> {
 	for synth in patch.iter() {
 		patch_synth_(synths, synth, check)?;
 	}
-	Ok("ok")
+	Ok(())
 }
 
-fn patch_synth_(synths: &mut Vec<Synth>, patch: &SynthPatch, check: bool) -> Result<&'static str, &'static str> {
+fn patch_synth_(synths: &mut Vec<Synth>, patch: &SynthPatch, check: bool) -> Result<(), Status> {
 	if let Some(synth_to_patch) = synths.iter_mut().find(|s| s.id == patch.id) {
 		if let Some(chains) = &patch.chains {
 			patch_chains_(&mut synth_to_patch.chains, chains, check)?;
@@ -341,22 +341,22 @@ fn patch_synth_(synths: &mut Vec<Synth>, patch: &SynthPatch, check: bool) -> Res
 			synth_to_patch.name = name.clone();
 		}
 
-		Ok("ok")
+		Ok(())
 	}
 	else {
 		println!("fail");
-		Err("not found") // 422
+		Err(Status::UnprocessableEntity) // 422
 	}
 }
 
-fn patch_chains_(chains: &mut Vec<Chain>, patch: &Vec<ChainPatch>, check: bool) -> Result<&'static str, &'static str> {
+fn patch_chains_(chains: &mut Vec<Chain>, patch: &Vec<ChainPatch>, check: bool) -> Result<(), Status> {
 	for chain in patch.iter() {
 		patch_chain_(chains, chain, check)?;
 	}
-	Ok("ok")
+	Ok(())
 }
 
-fn patch_chain_(chains: &mut Vec<Chain>, patch: &ChainPatch, check: bool) -> Result<&'static str, &'static str> {
+fn patch_chain_(chains: &mut Vec<Chain>, patch: &ChainPatch, check: bool) -> Result<(), Status> {
 	if let Some(chain_to_patch) = chains.iter_mut().find(|s| s.id == patch.id) {
 		if let Some(takes) = &patch.takes {
 			patch_takes_(&mut chain_to_patch.takes, takes, check)?;
@@ -365,21 +365,21 @@ fn patch_chain_(chains: &mut Vec<Chain>, patch: &ChainPatch, check: bool) -> Res
 			chain_to_patch.name = name.clone();
 		}
 
-		Ok("ok")
+		Ok(())
 	}
 	else {
-		Err("not found")
+		Err(Status::UnprocessableEntity)
 	}
 }
 
-fn patch_takes_(takes: &mut Vec<Take>, patch: &Vec<TakePatch>, check: bool) -> Result<&'static str, &'static str> {
+fn patch_takes_(takes: &mut Vec<Take>, patch: &Vec<TakePatch>, check: bool) -> Result<(), Status> {
 	for take in patch.iter() {
 		patch_take_(takes, take, check)?;
 	}
-	Ok("ok")
+	Ok(())
 }
 
-fn patch_take_(takes: &mut Vec<Take>, patch: &TakePatch, check: bool) -> Result<&'static str, &'static str> {
+fn patch_take_(takes: &mut Vec<Take>, patch: &TakePatch, check: bool) -> Result<(), Status> {
 	if let Some(take_to_patch) = takes.iter_mut().find(|s| s.id == patch.id) {
 		if let Some(name) = &patch.name {
 			take_to_patch.name = name.clone();
@@ -393,10 +393,10 @@ fn patch_take_(takes: &mut Vec<Take>, patch: &TakePatch, check: bool) -> Result<
 			take_to_patch.muted_scheduled = muted_scheduled;
 		}
 
-		Ok("ok")
+		Ok(())
 	}
 	else {
-		Err("not found")
+		Err(Status::UnprocessableEntity)
 	}
 }
 
