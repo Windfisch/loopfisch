@@ -105,12 +105,17 @@ pub struct FrontendThreadState {
 	devices: Vec<GuiAudioDevice>,
 	mididevices: Vec<GuiMidiDevice>,
 	pub shared: Arc<SharedThreadState>,
-	id_counter: u32
+	id_counter: u32,
+	async_client: Box<dyn IntoJackClient>
 }
 
 impl FrontendThreadState {
 	pub fn devices(&self) -> &Vec<GuiAudioDevice> { &self.devices}
 	pub fn mididevices(&self) -> &Vec<GuiMidiDevice> { &self.mididevices}
+
+	pub fn add_device(&mut self, name: &str, channels: u32, audio: bool, midi: bool) {
+		//AudioDevice::new(channels, &format!("{}_audio", name));
+	}
 
 	pub fn add_take(&mut self, dev_id: usize) -> Result<(),()> {
 		let id = self.id_counter;
@@ -189,7 +194,7 @@ impl FrontendThreadState {
 	}
 }
 
-pub fn create_thread_states(devices: Vec<AudioDevice>, mididevices: Vec<MidiDevice>, metronome: AudioMetronome, song_length: u32) -> (AudioThreadState, FrontendThreadState) {
+pub fn create_thread_states(client: jack::Client, devices: Vec<AudioDevice>, mididevices: Vec<MidiDevice>, metronome: AudioMetronome, song_length: u32) -> FrontendThreadState {
 
 	let shared = Arc::new(SharedThreadState {
 		song_length: AtomicU32::new(1),
@@ -199,15 +204,10 @@ pub fn create_thread_states(devices: Vec<AudioDevice>, mididevices: Vec<MidiDevi
 
 	let (take_sender, take_receiver) = ringbuf::RingBuffer::<Message>::new(10).split();
 
-	let frontend_thread_state = FrontendThreadState {
-		new_take_channel: take_sender,
-		devices: devices.iter().map(|d| GuiAudioDevice { info: d.info(), takes: Vec::new() } ).collect(),
-		mididevices: mididevices.iter().map(|d| GuiMidiDevice { info: d.info(), takes: Vec::new() } ).collect(),
-		shared: Arc::clone(&shared),
-		id_counter: 0
-	};
+	let frontend_devices = devices.iter().map(|d| GuiAudioDevice { info: d.info(), takes: Vec::new() } ).collect();
+	let frontend_mididevices = mididevices.iter().map(|d| GuiMidiDevice { info: d.info(), takes: Vec::new() } ).collect();
 
-	let audio_thread_state = AudioThreadState {
+	let mut audio_thread_state = AudioThreadState {
 		devices,
 		mididevices,
 		metronome,
@@ -219,8 +219,25 @@ pub fn create_thread_states(devices: Vec<AudioDevice>, mididevices: Vec<MidiDevi
 		song_length,
 		shared: Arc::clone(&shared)
 	};
+	
+	let process_callback = move |client: &jack::Client, ps: &jack::ProcessScope| -> jack::Control {
+		audio_thread_state.process_callback(client, ps)
+	};
+	let process = jack::ClosureProcessHandler::new(process_callback);
+	let active_client = client.activate_async(Notifications, process).unwrap();
 
-	return (audio_thread_state, frontend_thread_state);
+
+	let frontend_thread_state = FrontendThreadState {
+		new_take_channel: take_sender,
+		devices: frontend_devices,
+		mididevices: frontend_mididevices,
+		shared: Arc::clone(&shared),
+		id_counter: 0,
+		async_client: Box::new(active_client)
+	};
+
+
+	return frontend_thread_state;
 }
 
 impl AudioThreadState {
@@ -432,9 +449,26 @@ impl AudioThreadState {
 	}
 }
 
+pub trait IntoJackClient : Drop + Send {
+	fn as_client<'a>(&'a self) -> &'a jack::Client;
+	fn deactivate(self) -> Result<jack::Client, jack::Error>;
+}
+
+impl<N, P> IntoJackClient for jack::AsyncClient<N, P>
+where
+    N: 'static + Send + Sync + jack::NotificationHandler,
+    P: 'static + Send + jack::ProcessHandler
+{
+	fn as_client<'a>(&'a self) -> &'a jack::Client {
+		self.as_client()
+	}
+	fn deactivate(self) -> Result<jack::Client, jack::Error>{
+		self.deactivate().map(|client_and_callbacks_tuple| client_and_callbacks_tuple.0)
+	}
+}
+
 pub struct Engine {
 	frontend_thread_state: FrontendThreadState,
-	_client: Box<dyn Drop + Send> // this is to ensure that the client lives as long as the Engine.
 }
 
 impl Engine {
@@ -456,23 +490,18 @@ pub fn launch() -> Engine {
 	let mididevs = vec![mididev, mididev2];
 
 	let metronome = AudioMetronome::new(&client).unwrap();
-	
-	let (mut audio_thread_state, frontend_thread_state) = create_thread_states(devices, mididevs, metronome, client.sample_rate() as u32 * 4);
 
-	let process_callback = move |client: &jack::Client, ps: &jack::ProcessScope| -> jack::Control {
-		audio_thread_state.process_callback(client, ps)
-	};
-	let process = jack::ClosureProcessHandler::new(process_callback);
-	let active_client = client.activate_async(Notifications, process).unwrap();
+	let loop_length = client.sample_rate() as u32 * 4;
+	let frontend_thread_state = create_thread_states(client, devices, mididevs, metronome, loop_length);
 
-	active_client.as_client().connect_ports_by_name("loopfisch:fnord_out1", "system:playback_1").unwrap();
-	active_client.as_client().connect_ports_by_name("loopfisch:fnord_out2", "system:playback_2").unwrap();
-	active_client.as_client().connect_ports_by_name("system:capture_1", "loopfisch:fnord_in1").unwrap();
-	active_client.as_client().connect_ports_by_name("system:capture_2", "loopfisch:fnord_in2").unwrap();
+
+	frontend_thread_state.async_client.as_client().connect_ports_by_name("loopfisch:fnord_out1", "system:playback_1").unwrap();
+	frontend_thread_state.async_client.as_client().connect_ports_by_name("loopfisch:fnord_out2", "system:playback_2").unwrap();
+	frontend_thread_state.async_client.as_client().connect_ports_by_name("system:capture_1", "loopfisch:fnord_in1").unwrap();
+	frontend_thread_state.async_client.as_client().connect_ports_by_name("system:capture_2", "loopfisch:fnord_in2").unwrap();
 
 	return Engine {
 		frontend_thread_state,
-		_client: Box::new(active_client)
 	}
 }
 

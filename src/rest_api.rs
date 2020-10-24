@@ -346,7 +346,6 @@ fn patch_synth_(synths: &mut Vec<Synth>, patch: &SynthPatch, check: bool) -> Res
 		Ok(())
 	}
 	else {
-		println!("fail");
 		Err(Status::UnprocessableEntity) // 422
 	}
 }
