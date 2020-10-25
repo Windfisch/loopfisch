@@ -1,3 +1,4 @@
+#[derive(Debug)]
 pub struct MidiMessage {
 	pub timestamp: jack::Frames,
 	pub data: [u8; 3]

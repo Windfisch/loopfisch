@@ -3,6 +3,8 @@ use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListLink};
 use std::sync::atomic::*;
 use std::sync::Arc;
 use std::cell::RefCell;
+use std::collections::HashMap;
+use crate::id_generator::IdGenerator;
 
 use crate::midi_message::MidiMessage;
 
@@ -15,13 +17,14 @@ use crate::outsourced_allocation_buffer::Buffer;
 
 use assert_no_alloc::assert_no_alloc;
 
-#[derive(std::cmp::PartialEq)]
+#[derive(std::cmp::PartialEq, Debug)]
 enum RecordState {
 	Waiting,
 	Recording,
 	Finished
 }
 
+#[derive(Debug)]
 struct TakeNode {
 	take: RefCell<Take>,
 	link: LinkedListLink
@@ -36,6 +39,7 @@ impl TakeNode {
 	}
 }
 
+#[derive(Debug)]
 struct MidiTakeNode {
 	take: RefCell<MidiTake>,
 	link: LinkedListLink
@@ -53,7 +57,10 @@ impl MidiTakeNode {
 intrusive_adapter!(TakeAdapter = Box<TakeNode>: TakeNode { link: LinkedListLink });
 intrusive_adapter!(MidiTakeAdapter = Box<MidiTakeNode>: MidiTakeNode { link: LinkedListLink });
 
+#[derive(Debug)]
 enum Message {
+	UpdateAudioDevice(usize, Option<AudioDevice>),
+	UpdateMidiDevice(usize, Option<MidiDevice>),
 	NewTake(Box<TakeNode>),
 	NewMidiTake(Box<MidiTakeNode>),
 	SetMute(u32,bool),
@@ -62,8 +69,8 @@ enum Message {
 }
 
 pub struct AudioThreadState {
-	devices: Vec<AudioDevice>,
-	mididevices: Vec<MidiDevice>,
+	devices: Vec<Option<AudioDevice>>,
+	mididevices: Vec<Option<MidiDevice>>,
 	metronome: AudioMetronome,
 	takes: LinkedList<TakeAdapter>,
 	miditakes: LinkedList<MidiTakeAdapter>,
@@ -101,26 +108,72 @@ impl GuiMidiDevice {
 }
 
 pub struct FrontendThreadState {
-	new_take_channel: ringbuf::Producer<Message>,
-	devices: Vec<GuiAudioDevice>,
-	mididevices: Vec<GuiMidiDevice>,
+	new_take_channel: RetryChannelPush<Message>,
+	devices: HashMap<usize, GuiAudioDevice>,
+	mididevices: HashMap<usize, GuiMidiDevice>,
 	pub shared: Arc<SharedThreadState>,
-	id_counter: u32,
+	next_id: IdGenerator,
 	async_client: Box<dyn IntoJackClient>
 }
 
-impl FrontendThreadState {
-	pub fn devices(&self) -> &Vec<GuiAudioDevice> { &self.devices}
-	pub fn mididevices(&self) -> &Vec<GuiMidiDevice> { &self.mididevices}
+fn find_first_free_index<T>(map: &HashMap<usize, T>, max: usize) -> Option<usize> {
+	for i in 0..max {
+		if map.get(&i).is_none() {
+			return Some(i);
+		}
+	}
+	return None;
+}
 
-	//pub fn add_device(&mut self, name: &str, channels: u32) {
-	//	AudioDevice::new(self.async_client.as_client(), channels, name).unwrap(); // TODO
-	//}
+struct RetryChannelPush<T: std::fmt::Debug> (ringbuf::Producer<T>);
+impl<T: std::fmt::Debug> RetryChannelPush<T> {
+	pub fn send_message(&mut self, message: T) -> Result<(),()> {
+		println!("Sending message {:#?}", message);
+		let mut m = message;
+		for _ in 0..100 {
+			match self.0.push(m) {
+				Ok(()) => { return Ok(()); }
+				Err(undelivered_message) => { m = undelivered_message; }
+			}
+			std::thread::sleep( std::time::Duration::from_millis(10) );
+		}
+		return Err(());
+	}
+}
+
+impl FrontendThreadState {
+	pub fn devices(&self) -> &HashMap<usize, GuiAudioDevice> { &self.devices}
+	pub fn mididevices(&self) -> &HashMap<usize, GuiMidiDevice> { &self.mididevices}
+
+	pub fn add_device(&mut self, name: &str, channels: u32) -> Result<usize,()> {
+		if let Some(id) = find_first_free_index(&self.devices, 32) {
+			let dev = AudioDevice::new(self.async_client.as_client(), channels, name).map_err(|_|())?;
+			let guidev = GuiAudioDevice { info: dev.info(), takes: Vec::new() };
+			self.new_take_channel.send_message(Message::UpdateAudioDevice(id, Some(dev)))?;
+			self.devices.insert(id, guidev);
+			Ok(id)
+		}
+		else {
+			Err(())
+		}
+	}
+	pub fn add_mididevice(&mut self, name: &str, channels: u32) -> Result<usize,()> {
+		if let Some(id) = find_first_free_index(&self.devices, 32) {
+			let dev = MidiDevice::new(self.async_client.as_client(), name).map_err(|_|())?;
+			let guidev = GuiMidiDevice { info: dev.info(), takes: Vec::new() };
+			self.new_take_channel.send_message(Message::UpdateMidiDevice(id, Some(dev)))?;
+			self.mididevices.insert(id, guidev);
+			Ok(id)
+		}
+		else {
+			Err(())
+		}
+	}
 
 	pub fn add_take(&mut self, dev_id: usize) -> Result<(),()> {
-		let id = self.id_counter;
+		let id = self.next_id.gen();
 
-		let n_channels = self.devices[dev_id].info.n_channels;
+		let n_channels = self.devices[&dev_id].info.n_channels;
 		let take = Take {
 			samples: (0..n_channels).map(|_| Buffer::new(1024*8,512*8)).collect(),
 			record_state: RecordState::Waiting,
@@ -132,18 +185,13 @@ impl FrontendThreadState {
 		};
 		let take_node = Box::new(TakeNode::new(take));
 
-		if self.new_take_channel.push(Message::NewTake(take_node)).is_ok() {
-			self.devices[dev_id].takes.push(GuiTake{id, dev_id, unmuted: true});
-			self.id_counter += 1;
-			Ok(())
-		}
-		else {
-			Err(())
-		}
+		self.new_take_channel.send_message(Message::NewTake(take_node))?;
+		self.devices.get_mut(&dev_id).unwrap().takes.push(GuiTake{id, dev_id, unmuted: true});
+		Ok(())
 	}
 
 	pub fn add_miditake(&mut self, mididev_id: usize) -> Result<(),()> {
-		let id = self.id_counter;
+		let id = self.next_id.gen();
 
 		let take = MidiTake {
 			events: Buffer::new(1024, 512),
@@ -160,38 +208,32 @@ impl FrontendThreadState {
 		};
 		let take_node = Box::new(MidiTakeNode::new(take));
 
-		if self.new_take_channel.push(Message::NewMidiTake(take_node)).is_ok() {
-			self.mididevices[mididev_id].takes.push(GuiMidiTake{id, mididev_id, unmuted: true});
-			self.id_counter += 1;
-			Ok(())
-		}
-		else {
-			Err(())
-		}
+		self.new_take_channel.send_message(Message::NewMidiTake(take_node))?;
+		self.mididevices.get_mut(&mididev_id).unwrap().takes.push(GuiMidiTake{id, mididev_id, unmuted: true});
+		Ok(())
 	}
 
 	pub fn toggle_take_muted(&mut self, dev_id: usize, take_id: usize) -> Result<(),()> {
-		let take = &mut self.devices[dev_id].takes[take_id];
+		let take = &mut self.devices.get_mut(&dev_id).unwrap().takes[take_id];
 		let old_unmuted = take.unmuted;
-		if self.new_take_channel.push(Message::SetMute(take.id, old_unmuted)).is_ok() {
-			take.unmuted = !old_unmuted;
-			Ok(())
-		}
-		else {
-			Err(())
-		}
+		self.new_take_channel.send_message(Message::SetMute(take.id, old_unmuted))?;
+		take.unmuted = !old_unmuted;
+		Ok(())
 	}
 	pub fn toggle_miditake_muted(&mut self, dev_id: usize, take_id: usize) -> Result<(),()> {
-		let take = &mut self.mididevices[dev_id].takes[take_id];
+		let take = &mut self.mididevices.get_mut(&dev_id).unwrap().takes[take_id];
 		let old_unmuted = take.unmuted;
-		if self.new_take_channel.push(Message::SetMidiMute(take.id, old_unmuted)).is_ok() {
-			take.unmuted = !old_unmuted;
-			Ok(())
-		}
-		else {
-			Err(())
-		}
+		self.new_take_channel.send_message(Message::SetMidiMute(take.id, old_unmuted))?;
+		take.unmuted = !old_unmuted;
+		Ok(())
 	}
+}
+
+fn pad_option_vec<T>(vec: Vec<T>, size: usize) -> Vec<Option<T>> {
+	let n = vec.len();
+	vec.into_iter().map(|v| Some(v))
+		.chain( (n..size).map(|_| None) )
+		.collect()
 }
 
 pub fn create_thread_states(client: jack::Client, devices: Vec<AudioDevice>, mididevices: Vec<MidiDevice>, metronome: AudioMetronome, song_length: u32) -> FrontendThreadState {
@@ -204,12 +246,12 @@ pub fn create_thread_states(client: jack::Client, devices: Vec<AudioDevice>, mid
 
 	let (take_sender, take_receiver) = ringbuf::RingBuffer::<Message>::new(10).split();
 
-	let frontend_devices = devices.iter().map(|d| GuiAudioDevice { info: d.info(), takes: Vec::new() } ).collect();
-	let frontend_mididevices = mididevices.iter().map(|d| GuiMidiDevice { info: d.info(), takes: Vec::new() } ).collect();
+	let frontend_devices = devices.iter().enumerate().map(|d| (d.0, GuiAudioDevice { info: d.1.info(), takes: Vec::new() }) ).collect();
+	let frontend_mididevices = mididevices.iter().enumerate().map(|d| (d.0, GuiMidiDevice { info: d.1.info(), takes: Vec::new() }) ).collect();
 
 	let mut audio_thread_state = AudioThreadState {
-		devices,
-		mididevices,
+		devices: pad_option_vec(devices, 32),
+		mididevices: pad_option_vec(mididevices, 32),
 		metronome,
 		takes: LinkedList::new(TakeAdapter::new()),
 		miditakes: LinkedList::new(MidiTakeAdapter::new()),
@@ -228,11 +270,11 @@ pub fn create_thread_states(client: jack::Client, devices: Vec<AudioDevice>, mid
 
 
 	let frontend_thread_state = FrontendThreadState {
-		new_take_channel: take_sender,
+		new_take_channel: RetryChannelPush(take_sender),
 		devices: frontend_devices,
 		mididevices: frontend_mididevices,
 		shared: Arc::clone(&shared),
-		id_counter: 0,
+		next_id: IdGenerator::new(),
 		async_client: Box::new(active_client)
 	};
 
@@ -259,6 +301,36 @@ impl AudioThreadState {
 			match self.new_take_channel.pop() {
 				Some(msg) => {
 					match msg {
+						Message::UpdateAudioDevice(id, mut device) => {
+							// FrontendThreadState has verified that dev_id isn't currently used by any take
+							if cfg!(debug_assertions) {
+								for take in self.takes.iter() {
+									debug_assert!(take.take.borrow().dev_id != id);
+								}
+							}
+
+							std::mem::swap(&mut self.devices[id], &mut device);
+							
+							if let Some(old) = device {
+								// TODO FIXME: `device` must be sent to the frontend thread via ringbuffer so it can be freed there. freeing here is BAD.
+								panic!("Destructing old devices is not implemented yet");
+							}
+						}
+						Message::UpdateMidiDevice(id, mut device) => {
+							// FrontendThreadState has verified that dev_id isn't currently used by any take
+							if cfg!(debug_assertions) {
+								for take in self.miditakes.iter() {
+									debug_assert!(take.take.borrow().mididev_id != id);
+								}
+							}
+
+							std::mem::swap(&mut self.mididevices[id], &mut device);
+
+							if let Some(old) = device {
+								// TODO FIXME: `device` must be sent to the frontend thread via ringbuffer so it can be freed there. freeing here is BAD.
+								panic!("Destructing old devices is not implemented yet");
+							}
+						}
 						Message::NewTake(take) => { println!("\ngot take"); self.takes.push_back(take); }
 						Message::NewMidiTake(take) => { println!("\ngot miditake"); self.miditakes.push_back(take); }
 						Message::SetMute(id, muted) => {
@@ -300,13 +372,15 @@ impl AudioThreadState {
 
 		// then, handle all playing takes
 		for dev in self.devices.iter_mut() {
-			play_silence(scope,dev,0..scope.n_frames() as usize);
+			if let Some(d) = dev {
+				play_silence(scope,d,0..scope.n_frames() as usize);
+			}
 		}
 		
 		let mut cursor = self.takes.front();
 		while let Some(node) = cursor.get() {
 			let mut t = node.take.borrow_mut();
-			let dev = &mut self.devices[t.dev_id];
+			let dev = self.devices[t.dev_id].as_mut().unwrap();
 			// we assume that all channels have the same latencies.
 			let playback_latency = dev.channels[0].out_port.get_latency_range(jack::LatencyType::Playback).1;
 
@@ -336,7 +410,7 @@ impl AudioThreadState {
 		let mut cursor = self.miditakes.front();
 		while let Some(node) = cursor.get() {
 			let mut t = node.take.borrow_mut();
-			let dev = &mut self.mididevices[t.mididev_id];
+			let dev = self.mididevices[t.mididev_id].as_mut().unwrap();
 			let playback_latency = dev.out_port.get_latency_range(jack::LatencyType::Playback).1;
 
 			let song_position = (self.song_position + self.song_length + playback_latency) % self.song_length;
@@ -365,7 +439,9 @@ impl AudioThreadState {
 		}
 		
 		for dev in self.mididevices.iter_mut() {
-			dev.commit_out_buffer(scope);
+			if let Some(d) = dev {
+				d.commit_out_buffer(scope);
+			}
 		}
 		
 
@@ -373,7 +449,7 @@ impl AudioThreadState {
 		let mut cursor = self.takes.front();
 		while let Some(node) = cursor.get() {
 			let mut t = node.take.borrow_mut();
-			let dev = &self.devices[t.dev_id];
+			let dev = self.devices[t.dev_id].as_ref().unwrap();
 			// we assume that all channels have the same latencies.
 			let capture_latency = dev.channels[0].in_port.get_latency_range(jack::LatencyType::Capture).1;
 		
@@ -407,7 +483,7 @@ impl AudioThreadState {
 		let mut cursor = self.miditakes.front();
 		while let Some(node) = cursor.get() {
 			let mut t = node.take.borrow_mut();
-			let dev = &self.mididevices[t.mididev_id];
+			let dev = self.mididevices[t.mididev_id].as_ref().unwrap();
 			// we assume that all channels have the same latencies.
 			let capture_latency = dev.in_port.get_latency_range(jack::LatencyType::Capture).1;
 		
@@ -519,6 +595,20 @@ pub struct MidiTake {
 	note_registry: RefCell<MidiNoteRegistry> // this SUCKS. TODO.
 }
 
+impl std::fmt::Debug for MidiTake {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("MidiTake")
+			.field("record_state", &self.record_state)
+			.field("id", &self.id)
+			.field("mididev_id", &self.mididev_id)
+			.field("unmuted", &self.unmuted)
+			.field("playing", &self.playing)
+			.field("started_recording_at", &self.started_recording_at)
+			.field("events", &if self.events.empty() { "<Empty>".to_string() } else { "[...]".to_string() })
+			.finish()
+	}
+}
+
 pub struct Take {
 	/// Sequence of all samples. The take's duration and playhead position are implicitly managed by the underlying Buffer.
 	samples: Vec<Buffer<f32>>,
@@ -528,6 +618,21 @@ pub struct Take {
 	pub unmuted: bool,
 	pub playing: bool,
 	pub started_recording_at: u32,
+}
+
+impl std::fmt::Debug for Take {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("Take")
+			.field("record_state", &self.record_state)
+			.field("id", &self.id)
+			.field("dev_id", &self.dev_id)
+			.field("unmuted", &self.unmuted)
+			.field("playing", &self.playing)
+			.field("started_recording_at", &self.started_recording_at)
+			.field("channels", &self.samples.len())
+			.field("samples", &if self.samples[0].empty() { "<Empty>".to_string() } else { "[...]".to_string() })
+			.finish()
+	}
 }
 
 pub struct GuiTake {

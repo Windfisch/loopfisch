@@ -12,6 +12,7 @@ use std::sync::Arc;
 use async_std;
 use rocket::http::Method;
 use std::path::PathBuf;
+use crate::id_generator::IdGenerator;
 
 
 use rocket::{Request, Response};
@@ -243,6 +244,11 @@ struct ChainPatch {
 }
 
 #[derive(Deserialize,Clone)]
+struct ChainPost {
+	name: String,
+}
+
+#[derive(Deserialize,Clone)]
 struct TakePatch {
 	id: u32,
 	name: Option<String>,
@@ -326,12 +332,33 @@ async fn patch_take(state: State<'_, GuiState>, synthid: u32, chainid: u32, take
 	Err(Status::NotFound)
 }
 
+#[post("/synths/<synthid>/chains", data="<data>")]
+async fn post_chain(state: State<'_, GuiState>, synthid: u32, data: Json<ChainPost>) -> Result<rocket::response::status::Created<()>, Status> {
+	let mut guard_ = state.mutex.lock().await;
+	let guard = &mut *guard_;
+	if let Some(synth) = guard.synths.iter_mut().find(|s| s.id == synthid) {
+		let id = guard.chain_id.gen();
+		if let Ok(engine_id) = guard.engine.add_device(&data.name, 2) {
+			synth.chains.push( Chain {
+				id,
+				takes: Vec::new(),
+				name: data.name.clone()
+			});
+
+			return Ok(rocket::response::status::Created::new(format!("/api/synths/{}/chains/{}", synthid, id)));
+		}
+		else {
+			return Err(Status::InternalServerError);
+		}
+	}
+	Err(Status::NotFound)
+}
 #[post("/synths/<synthid>/chains/<chainid>/takes", data="<data>")]
-async fn post_takes(state: State<'_, GuiState>, synthid: u32, chainid: u32, data: Json<Vec<TakePatch>>) -> Result<(), Status> {
+async fn post_take(state: State<'_, GuiState>, synthid: u32, chainid: u32, data: Json<Vec<TakePatch>>) -> Result<(), Status> {
 	let mut guard = state.mutex.lock().await;
 	if let Some(synth) = guard.synths.iter_mut().find(|s| s.id == synthid) {
 		if let Some(chain) = synth.chains.iter_mut().find(|c| c.id == chainid) {
-			
+			// TODO
 			return Ok(());
 		}
 	}
@@ -472,7 +499,8 @@ struct Take {
 
 struct GuiMutexedState {
 	engine: FrontendThreadState,
-	synths: Vec<Synth>
+	synths: Vec<Synth>,
+	chain_id: IdGenerator,
 }
 
 struct GuiState {
@@ -499,7 +527,8 @@ pub async fn launch_server(engine: FrontendThreadState) {
 						}
 					]
 				}
-			]
+			],
+			chain_id: IdGenerator::new()
 		})
 	};
 	
@@ -511,7 +540,7 @@ pub async fn launch_server(engine: FrontendThreadState) {
 			chains_get, chains_get_one,
 			takes_get, takes_get_one,
 			patch_synths, patch_synth,
-			patch_chains, patch_chain,
+			patch_chains, patch_chain, post_chain,
 			patch_takes, patch_take,
 		])
 		.register(catchers![not_found])

@@ -20,6 +20,7 @@ mod midi_message;
 mod bit_array;
 mod midi_registry;
 mod outsourced_allocation_buffer;
+mod id_generator;
 use tokio;
 
 mod rest_api;

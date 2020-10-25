@@ -2,6 +2,7 @@ use jack;
 
 use crate::midi_message::MidiMessage;
 
+#[derive(Debug)]
 pub struct MidiDevice {
 	pub in_port: jack::Port<jack::MidiIn>, // FIXME: these should not be public. there should be
 	pub out_port: jack::Port<jack::MidiOut>, // an abstraction layer around the jack driver.
@@ -60,6 +61,7 @@ impl MidiDevice {
 	}
 }
 
+#[derive(Debug)]
 pub struct AudioChannel {
 	pub in_port: jack::Port<jack::AudioIn>, // FIXME: these shouldn't be pub; there should be
 	pub out_port: jack::Port<jack::AudioOut>, // an abstraction layer around the driver
@@ -73,6 +75,7 @@ impl AudioChannel {
 	}
 }
 
+#[derive(Debug)]
 pub struct AudioDevice {
 	pub channels: Vec<AudioChannel>,
 	name: String
