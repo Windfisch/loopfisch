@@ -20,8 +20,6 @@ mod midi_message;
 mod bit_array;
 mod midi_registry;
 mod outsourced_allocation_buffer;
-mod user_interface;
-use user_interface::UserInterface;
 use tokio;
 
 mod rest_api;
@@ -56,12 +54,4 @@ async fn main() {
 	rest_api::launch_server(engine).await;
 	//rt.block_on(rest_api::launch_server(frontend_thread_state));
 	return;
-/*
-
-	let mut ui = UserInterface::new();
-	loop {
-		if ui.spin(frontend_thread_state).unwrap() {
-			break;
-		}
-	}*/
 }
