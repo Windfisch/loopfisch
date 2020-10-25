@@ -467,17 +467,7 @@ where
 	}
 }
 
-pub struct Engine {
-	frontend_thread_state: FrontendThreadState,
-}
-
-impl Engine {
-	pub fn get_frontend_thread_state(&mut self) -> &mut FrontendThreadState {
-		return &mut self.frontend_thread_state;
-	}
-}
-
-pub fn launch() -> Engine {
+pub fn launch() -> FrontendThreadState {
 	let (client, _status) = jack::Client::new("loopfisch", jack::ClientOptions::NO_START_SERVER).unwrap();
 
 	println!("JACK running with sampling rate {} Hz, buffer size = {} samples", client.sample_rate(), client.buffer_size());
@@ -500,9 +490,7 @@ pub fn launch() -> Engine {
 	frontend_thread_state.async_client.as_client().connect_ports_by_name("system:capture_1", "loopfisch:fnord_in1").unwrap();
 	frontend_thread_state.async_client.as_client().connect_ports_by_name("system:capture_2", "loopfisch:fnord_in2").unwrap();
 
-	return Engine {
-		frontend_thread_state,
-	}
+	return frontend_thread_state;
 }
 
 fn play_silence(scope: &jack::ProcessScope, device: &mut AudioDevice, range: std::ops::Range<usize>) {

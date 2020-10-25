@@ -102,8 +102,7 @@ async fn muted(state: State<'_, GuiState>, user: String) -> Result<rocket::respo
 		{
 			*state.muted.lock().await = m;
 			state.update_list.push(Action::Mute).await;
-			let mut eng = state.engine.lock().await;
-			let fts = eng.get_frontend_thread_state();
+			let mut fts = state.engine.lock().await;
 			fts.add_take(0);
 			Ok(rocket::response::status::Accepted(None))
 		},
@@ -460,11 +459,11 @@ struct Take {
 struct GuiState {
 	update_list: UpdateList,
 	muted: Mutex<bool>,
-	engine: Mutex<Engine>,
+	engine: Mutex<FrontendThreadState>,
 	synths: Mutex<Vec<Synth>>
 }
 
-pub async fn launch_server(engine: Engine) {
+pub async fn launch_server(engine: FrontendThreadState) {
 	let state = GuiState {
 		update_list: UpdateList::new(),
 		muted: Mutex::new(true),
