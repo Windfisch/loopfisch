@@ -102,8 +102,8 @@ async fn muted(state: State<'_, GuiState>, user: String) -> Result<rocket::respo
 		{
 			*state.muted.lock().await = m;
 			state.update_list.push(Action::Mute).await;
-			let mut fts = state.engine.lock().await;
-			fts.add_take(0);
+			let mut lock = state.mutex.lock().await;
+			lock.engine.add_take(0);
 			Ok(rocket::response::status::Accepted(None))
 		},
 		Err(_) =>
@@ -140,25 +140,26 @@ use json::Json;
 
 #[get("/synths")]
 async fn synths_get(state: State<'_, GuiState>) -> Json< Vec<Synth> > {
-	Json(state.synths.lock().await.clone())
+	let lock = state.mutex.lock().await;
+	Json(lock.synths.clone())
 }
 
 #[get("/synths/<num>")]
 async fn synths_get_one(state: State<'_, GuiState>, num: u32) -> Option<Json<Synth> > {
-	let synths = state.synths.lock().await;
-	synths.iter().find(|s| s.id == num).cloned().map(|synth| Json(synth))
+	let lock = state.mutex.lock().await;
+	lock.synths.iter().find(|s| s.id == num).cloned().map(|synth| Json(synth))
 }
 
 #[get("/synths/<synthnum>/chains")]
 async fn chains_get(state: State<'_, GuiState>, synthnum: u32) -> Option<Json<Vec<Chain>> > {
-	let synths = state.synths.lock().await;
-	synths.iter().find(|s| s.id == synthnum).map(|s| Json(s.chains.clone()))
+	let lock = state.mutex.lock().await;
+	lock.synths.iter().find(|s| s.id == synthnum).map(|s| Json(s.chains.clone()))
 }
 
 #[get("/synths/<synthnum>/chains/<chainnum>")]
 async fn chains_get_one(state: State<'_, GuiState>, synthnum: u32, chainnum:u32) -> Option<Json<Chain> > {
-	let synths = state.synths.lock().await;
-	synths.iter().find(|s| s.id == synthnum).map(
+	let lock = state.mutex.lock().await;
+	lock.synths.iter().find(|s| s.id == synthnum).map(
 		|s| s.chains.iter().find(|c| c.id == chainnum).map(
 			|c| Json(c.clone())
 		)
@@ -167,8 +168,8 @@ async fn chains_get_one(state: State<'_, GuiState>, synthnum: u32, chainnum:u32)
 
 #[get("/synths/<synthnum>/chains/<chainnum>/takes")]
 async fn takes_get(state: State<'_, GuiState>, synthnum: u32, chainnum:u32) -> Option<Json<Vec<Take>> > {
-	let synths = state.synths.lock().await;
-	synths.iter().find(|s| s.id == synthnum).map(
+	let lock = state.mutex.lock().await;
+	lock.synths.iter().find(|s| s.id == synthnum).map(
 		|s| s.chains.iter().find(|c| c.id == chainnum).map(
 			|c| Json(c.takes.clone())
 		)
@@ -177,8 +178,8 @@ async fn takes_get(state: State<'_, GuiState>, synthnum: u32, chainnum:u32) -> O
 
 #[get("/synths/<synthnum>/chains/<chainnum>/takes/<takenum>")]
 async fn takes_get_one(state: State<'_, GuiState>, synthnum: u32, chainnum:u32, takenum: u32) -> Option<Json<Take> > {
-	let synths = state.synths.lock().await;
-	synths.iter().find(|s| s.id == synthnum).map(
+	let lock = state.mutex.lock().await;
+	lock.synths.iter().find(|s| s.id == synthnum).map(
 		|s| s.chains.iter().find(|c| c.id == chainnum).map(
 			|c| c.takes.iter().find(|t| t.id == takenum).map(
 				|t| Json(t.clone())
@@ -186,6 +187,7 @@ async fn takes_get_one(state: State<'_, GuiState>, synthnum: u32, chainnum:u32, 
 		)
 	).flatten().flatten()
 }
+
 
 mod json_patch
 {
@@ -253,9 +255,9 @@ struct TakePatch {
 
 #[patch("/synths", data="<patch>")]
 async fn patch_synths(state: State<'_, GuiState>, patch: Json<Vec<SynthPatch>>) -> Result<(), Status> {
-	let mut guard = state.synths.lock().await;
-	patch_synths_(&mut *guard, &*patch, true)?;
-	patch_synths_(&mut *guard, &*patch, false).unwrap();
+	let mut guard = state.mutex.lock().await;
+	patch_synths_(&mut guard.synths, &*patch, true)?;
+	patch_synths_(&mut guard.synths, &*patch, false).unwrap();
 	Ok(())
 }
 
@@ -264,16 +266,16 @@ async fn patch_synth(state: State<'_, GuiState>, id: u32, patch: Json<SynthPatch
 	if id != patch.id {
 		return Err(Status::UnprocessableEntity); //422
 	}
-	let mut guard = state.synths.lock().await;
-	patch_synth_(&mut *guard, &*patch, true)?;
-	patch_synth_(&mut *guard, &*patch, false).unwrap();
+	let mut guard = state.mutex.lock().await;
+	patch_synth_(&mut guard.synths, &*patch, true)?;
+	patch_synth_(&mut guard.synths, &*patch, false).unwrap();
 	Ok(())
 }
 
 #[patch("/synths/<synthid>/chains", data="<patch>")]
 async fn patch_chains(state: State<'_, GuiState>, synthid: u32, patch: Json<Vec<ChainPatch>>) -> Result<(), Status> {
-	let mut guard = state.synths.lock().await;
-	if let Some(synth) = guard.iter_mut().find(|s| s.id == synthid) {
+	let mut guard = state.mutex.lock().await;
+	if let Some(synth) = guard.synths.iter_mut().find(|s| s.id == synthid) {
 		patch_chains_(&mut synth.chains, &*patch, true)?;
 		patch_chains_(&mut synth.chains, &*patch, false).unwrap();
 		return Ok(());
@@ -283,8 +285,8 @@ async fn patch_chains(state: State<'_, GuiState>, synthid: u32, patch: Json<Vec<
 
 #[patch("/synths/<synthid>/chains/<chainid>", data="<patch>")]
 async fn patch_chain(state: State<'_, GuiState>, synthid: u32, chainid: u32, patch: Json<ChainPatch>) -> Result<(), Status> {
-	let mut guard = state.synths.lock().await;
-	if let Some(synth) = guard.iter_mut().find(|s| s.id == synthid) {
+	let mut guard = state.mutex.lock().await;
+	if let Some(synth) = guard.synths.iter_mut().find(|s| s.id == synthid) {
 		if chainid != patch.id {
 			return Err(Status::UnprocessableEntity);
 		}
@@ -297,8 +299,8 @@ async fn patch_chain(state: State<'_, GuiState>, synthid: u32, chainid: u32, pat
 
 #[patch("/synths/<synthid>/chains/<chainid>/takes", data="<patch>")]
 async fn patch_takes(state: State<'_, GuiState>, synthid: u32, chainid: u32, patch: Json<Vec<TakePatch>>) -> Result<(), Status> {
-	let mut guard = state.synths.lock().await;
-	if let Some(synth) = guard.iter_mut().find(|s| s.id == synthid) {
+	let mut guard = state.mutex.lock().await;
+	if let Some(synth) = guard.synths.iter_mut().find(|s| s.id == synthid) {
 		if let Some(chain) = synth.chains.iter_mut().find(|c| c.id == chainid) {
 			patch_takes_(&mut chain.takes, &*patch, true)?;
 			patch_takes_(&mut chain.takes, &*patch, false).unwrap();
@@ -310,14 +312,26 @@ async fn patch_takes(state: State<'_, GuiState>, synthid: u32, chainid: u32, pat
 
 #[patch("/synths/<synthid>/chains/<chainid>/takes/<takeid>", data="<patch>")]
 async fn patch_take(state: State<'_, GuiState>, synthid: u32, chainid: u32, takeid: u32, patch: Json<TakePatch>) -> Result<(), Status> {
-	let mut guard = state.synths.lock().await;
-	if let Some(synth) = guard.iter_mut().find(|s| s.id == synthid) {
+	let mut guard = state.mutex.lock().await;
+	if let Some(synth) = guard.synths.iter_mut().find(|s| s.id == synthid) {
 		if let Some(chain) = synth.chains.iter_mut().find(|s| s.id == chainid) {
 			if takeid != patch.id {
 				return Err(Status::UnprocessableEntity);
 			}
 			patch_take_(&mut chain.takes, &*patch, true)?;
 			patch_take_(&mut chain.takes, &*patch, false).unwrap();
+			return Ok(());
+		}
+	}
+	Err(Status::NotFound)
+}
+
+#[post("/synths/<synthid>/chains/<chainid>/takes", data="<data>")]
+async fn post_takes(state: State<'_, GuiState>, synthid: u32, chainid: u32, data: Json<Vec<TakePatch>>) -> Result<(), Status> {
+	let mut guard = state.mutex.lock().await;
+	if let Some(synth) = guard.synths.iter_mut().find(|s| s.id == synthid) {
+		if let Some(chain) = synth.chains.iter_mut().find(|c| c.id == chainid) {
+			
 			return Ok(());
 		}
 	}
@@ -456,31 +470,37 @@ struct Take {
 	associated_midi_takes: Vec<u32>,
 }
 
+struct GuiMutexedState {
+	engine: FrontendThreadState,
+	synths: Vec<Synth>
+}
+
 struct GuiState {
 	update_list: UpdateList,
 	muted: Mutex<bool>,
-	engine: Mutex<FrontendThreadState>,
-	synths: Mutex<Vec<Synth>>
+	mutex: Mutex<GuiMutexedState>,
 }
 
 pub async fn launch_server(engine: FrontendThreadState) {
 	let state = GuiState {
 		update_list: UpdateList::new(),
 		muted: Mutex::new(true),
-		engine: Mutex::new(engine),
-		synths: Mutex::new(vec![
-			Synth {
-				id: 0,
-				name: "DeepMind 13".into(),
-				chains: vec![
-					Chain {
-						id: 0,
-						name: "Pad".into(),
-						takes: vec![]
-					}
-				]
-			}
-		])
+		mutex: Mutex::new( GuiMutexedState {
+			engine,
+			synths: vec![
+				Synth {
+					id: 0,
+					name: "DeepMind 13".into(),
+					chains: vec![
+						Chain {
+							id: 0,
+							name: "Pad".into(),
+							takes: vec![]
+						}
+					]
+				}
+			]
+		})
 	};
 	
 	rocket::ignite()

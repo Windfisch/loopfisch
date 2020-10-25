@@ -113,9 +113,9 @@ impl FrontendThreadState {
 	pub fn devices(&self) -> &Vec<GuiAudioDevice> { &self.devices}
 	pub fn mididevices(&self) -> &Vec<GuiMidiDevice> { &self.mididevices}
 
-	pub fn add_device(&mut self, name: &str, channels: u32, audio: bool, midi: bool) {
-		//AudioDevice::new(channels, &format!("{}_audio", name));
-	}
+	//pub fn add_device(&mut self, name: &str, channels: u32) {
+	//	AudioDevice::new(self.async_client.as_client(), channels, name).unwrap(); // TODO
+	//}
 
 	pub fn add_take(&mut self, dev_id: usize) -> Result<(),()> {
 		let id = self.id_counter;
