@@ -38,6 +38,7 @@ impl Fairing for CORS {
 		response.set_header(Header::new("Access-Control-Allow-Origin", "http://localhost:8080"));
 		response.set_header(Header::new("Access-Control-Allow-Methods", "POST, GET, OPTIONS"));
 		response.set_header(Header::new("Access-Control-Allow-Headers", "Content-Type"));
+		response.set_header(Header::new("Access-Control-Expose-Headers", "Location"));
 		response.set_header(Header::new("Access-Control-Allow-Credentials", "true"));
 
 		if request.method() == Method::Options {
@@ -120,8 +121,8 @@ fn muted2(state: State<'_, GuiState>, user: String) -> rocket::response::status:
 }
 
 
-#[options("/muted")]
-fn muted_options() {
+#[options("/<path..>")]
+fn muted_options(path: PathBuf) {
 
 }
 
