@@ -54,7 +54,13 @@ use std::collections::HashMap;
 #[derive(Serialize,Clone)]
 enum Action {
 	Mute,
-	Unmute
+	Unmute,
+	UpdateSynth(u32),
+	DeleteSynth(u32),
+	UpdateChain(u32,u32),
+	DeleteChain(u32,u32),
+	UpdateTake(u32,u32,u32),
+	DeleteTake(u32,u32,u32)
 }
 
 #[derive(Serialize, Clone)]
@@ -132,6 +138,34 @@ async fn muted_get(state: State<'_,GuiState>) -> json::Json<bool> {
 	let muted = *guard;
 	return json::Json(muted);
 }
+
+struct UpdateRoot {
+	synths: Vec<UpdateSynth>
+}
+
+struct UpdateSynth {
+	id: u32,
+	name: Option<String>,
+	chains: Option<Vec<UpdateChain>>,
+	deleted: Option<bool>
+}
+
+struct UpdateChain {
+	id: u32,
+	name: Option<String>,
+	takes: Option<Vec<UpdateTake>>,
+	deleted: Option<bool>
+}
+
+struct UpdateTake {
+	id: u32,
+	name: Option<String>,
+	muted: Option<bool>,
+	muted_scheduled: Option<bool>,
+	associated_midi_takes: Option<Vec<u32>>,
+	deleted: Option<bool>
+}
+
 
 #[get("/updates?<since>&<seconds>")]
 async fn updates(state: State<'_, GuiState>, since: u64, seconds: u64) -> json::Json< Vec<Update> > {
@@ -333,18 +367,64 @@ async fn patch_take(state: State<'_, GuiState>, synthid: u32, chainid: u32, take
 	Err(Status::NotFound)
 }
 
+fn gen_unique_name<'a,T: Iterator<Item=&'a str> + Clone>(desired_name: &str, iter: T) -> String {
+	if iter.clone().find(|s| *s == desired_name).is_some() {
+		let mut i = 2;
+		loop {
+			let name = format!("{} {}", desired_name, i);
+			if iter.clone().find(|s| *s == name).is_none() {
+				return name;
+			}
+			i+=1;
+		}
+	}
+	else {
+		return desired_name.into();
+	}
+}
+
+#[post("/synths", data="<data>")]
+async fn post_synth(state: State<'_, GuiState>, data: Json<ChainPost>) -> Result<rocket::response::status::Created<()>, Status> {
+	let mut guard_ = state.mutex.lock().await;
+	let guard = &mut *guard_;
+	let id = guard.synth_id.gen();
+
+	let name = gen_unique_name(&data.name, guard.synths.iter().map(|c|&c.name[..]));
+
+	if let Ok(engine_mididevice_id) = guard.engine.add_mididevice(&name) {
+		guard.synths.push( Synth {
+			id,
+			chains: Vec::new(),
+			name,
+			engine_mididevice_id
+		});
+
+		state.update_list.push(Action::UpdateSynth(id)).await;
+
+		return Ok(rocket::response::status::Created::new(format!("/api/synths/{}", id)));
+	}
+	else {
+		return Err(Status::InternalServerError);
+	}
+}
 #[post("/synths/<synthid>/chains", data="<data>")]
 async fn post_chain(state: State<'_, GuiState>, synthid: u32, data: Json<ChainPost>) -> Result<rocket::response::status::Created<()>, Status> {
 	let mut guard_ = state.mutex.lock().await;
 	let guard = &mut *guard_;
 	if let Some(synth) = guard.synths.iter_mut().find(|s| s.id == synthid) {
 		let id = guard.chain_id.gen();
-		if let Ok(engine_id) = guard.engine.add_device(&data.name, 2) {
+
+		let name = gen_unique_name(&(synth.name.clone() + "_" + &data.name), synth.chains.iter().map(|c|&c.name[..]));
+
+		if let Ok(engine_audiodevice_id) = guard.engine.add_device(&name, 2) {
 			synth.chains.push( Chain {
 				id,
 				takes: Vec::new(),
-				name: data.name.clone()
+				name,
+				engine_audiodevice_id
 			});
+
+			state.update_list.push(Action::UpdateChain(synthid, id)).await;
 
 			return Ok(rocket::response::status::Created::new(format!("/api/synths/{}/chains/{}", synthid, id)));
 		}
@@ -479,14 +559,20 @@ fn not_found(req: &Request) -> String {
 struct Synth {
 	id: u32,
 	name: String,
-	chains: Vec<Chain>
+	chains: Vec<Chain>,
+
+	#[serde(skip)]
+	engine_mididevice_id: usize
 }
 
 #[derive(Serialize,Clone)]
 struct Chain {
 	id: u32,
 	name: String,
-	takes: Vec<Take>
+	takes: Vec<Take>,
+
+	#[serde(skip)]
+	engine_audiodevice_id: usize
 }
 
 #[derive(Serialize,Clone)]
@@ -502,6 +588,7 @@ struct GuiMutexedState {
 	engine: FrontendThreadState,
 	synths: Vec<Synth>,
 	chain_id: IdGenerator,
+	synth_id: IdGenerator,
 }
 
 struct GuiState {
@@ -520,16 +607,19 @@ pub async fn launch_server(engine: FrontendThreadState) {
 				Synth {
 					id: 0,
 					name: "DeepMind 13".into(),
+					engine_mididevice_id: 1337, // FIXME
 					chains: vec![
 						Chain {
 							id: 0,
 							name: "Pad".into(),
-							takes: vec![]
+							takes: vec![],
+							engine_audiodevice_id: 1337, // FIXME
 						}
 					]
 				}
 			],
-			chain_id: IdGenerator::new()
+			chain_id: IdGenerator::new(),
+			synth_id: IdGenerator::new()
 		})
 	};
 	
@@ -540,7 +630,7 @@ pub async fn launch_server(engine: FrontendThreadState) {
 			synths_get, synths_get_one,
 			chains_get, chains_get_one,
 			takes_get, takes_get_one,
-			patch_synths, patch_synth,
+			patch_synths, patch_synth, post_synth,
 			patch_chains, patch_chain, post_chain,
 			patch_takes, patch_take,
 		])

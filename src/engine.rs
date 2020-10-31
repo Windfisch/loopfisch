@@ -157,7 +157,7 @@ impl FrontendThreadState {
 			Err(())
 		}
 	}
-	pub fn add_mididevice(&mut self, name: &str, channels: u32) -> Result<usize,()> {
+	pub fn add_mididevice(&mut self, name: &str) -> Result<usize,()> {
 		if let Some(id) = find_first_free_index(&self.devices, 32) {
 			let dev = MidiDevice::new(self.async_client.as_client(), name).map_err(|_|())?;
 			let guidev = GuiMidiDevice { info: dev.info(), takes: Vec::new() };

@@ -148,7 +148,7 @@ body {
   <body>
     <h1>Hello World!</h1>
     <div id="app">
-		<synth v-for="synth in synths" v-bind:name="synth.name" v-bind:chains="synth.chains"> </synth>
+		<synth v-for="synth in synths" v-bind:model="synth" v-bind:id="synth.id" v-bind:name="synth.name" v-bind:chains="synth.chains"> </synth>
     </div>
 
     

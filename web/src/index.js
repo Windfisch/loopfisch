@@ -32,6 +32,7 @@ var app2 = new Vue({
 		synths: [
 			{
 				name: "Deepmind 13",
+				id: 0,
 				chains: [
 					{
 						name: "Pad",
@@ -209,6 +210,18 @@ var app2 = new Vue({
 	}
 })
 
+console.log(app2.synths);
+
+async function init() {
+	var response = await fetch("http://localhost:8000/api/synths");
+	var json = await response.json();
+	console.log("fnord");
+	console.log(json);
+	app2.synths = json;
+	console.log(app2.synths);
+}
+
+init();
 
 function mainloop()
 {
