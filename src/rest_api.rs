@@ -267,6 +267,9 @@ async fn patch_synths(state: State<'_, GuiState>, patch: Json<Vec<SynthPatch>>) 
 	let mut guard = state.mutex.lock().await;
 	patch_synths_(&mut guard.synths, &*patch, true)?;
 	patch_synths_(&mut guard.synths, &*patch, false).unwrap();
+	for p in patch.iter() {
+		state.update_list.push(make_update_synth(guard.synths.iter().find(|s| s.id == p.id).unwrap())).await;
+	}
 	Ok(())
 }
 
@@ -278,6 +281,7 @@ async fn patch_synth(state: State<'_, GuiState>, id: u32, patch: Json<SynthPatch
 	let mut guard = state.mutex.lock().await;
 	patch_synth_(&mut guard.synths, &*patch, true)?;
 	patch_synth_(&mut guard.synths, &*patch, false).unwrap();
+	state.update_list.push(make_update_synth(guard.synths.iter().find(|s| s.id == patch.id).unwrap())).await;
 	Ok(())
 }
 
@@ -287,6 +291,9 @@ async fn patch_chains(state: State<'_, GuiState>, synthid: u32, patch: Json<Vec<
 	if let Some(synth) = guard.synths.iter_mut().find(|s| s.id == synthid) {
 		patch_chains_(&mut synth.chains, &*patch, true)?;
 		patch_chains_(&mut synth.chains, &*patch, false).unwrap();
+		for p in patch.iter() {
+			state.update_list.push(make_update_chain(synth.chains.iter().find(|s| s.id == p.id).unwrap(), synthid)).await;
+		}
 		return Ok(());
 	}
 	Err(Status::NotFound)
@@ -301,6 +308,7 @@ async fn patch_chain(state: State<'_, GuiState>, synthid: u32, chainid: u32, pat
 		}
 		patch_chain_(&mut synth.chains, &*patch, true)?;
 		patch_chain_(&mut synth.chains, &*patch, false).unwrap();
+		state.update_list.push(make_update_chain(synth.chains.iter().find(|s| s.id == patch.id).unwrap(), synthid)).await;
 		return Ok(());
 	}
 	Err(Status::NotFound)
@@ -313,6 +321,9 @@ async fn patch_takes(state: State<'_, GuiState>, synthid: u32, chainid: u32, pat
 		if let Some(chain) = synth.chains.iter_mut().find(|c| c.id == chainid) {
 			patch_takes_(&mut chain.takes, &*patch, true)?;
 			patch_takes_(&mut chain.takes, &*patch, false).unwrap();
+			for p in patch.iter() {
+				// state.update_list.push(make_update_take(chain.takes.iter().find(|s| s.id == p.id).unwrap(), synthid, chainid)).await; TODO
+			}
 			return Ok(());
 		}
 	}
@@ -329,6 +340,7 @@ async fn patch_take(state: State<'_, GuiState>, synthid: u32, chainid: u32, take
 			}
 			patch_take_(&mut chain.takes, &*patch, true)?;
 			patch_take_(&mut chain.takes, &*patch, false).unwrap();
+			// state.update_list.push(make_update_take(chain.takes.iter().find(|s| s.id == patch.id).unwrap(), synthid, chainid)).await; TODO
 			return Ok(());
 		}
 	}
