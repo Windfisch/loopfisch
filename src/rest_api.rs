@@ -53,8 +53,6 @@ use std::collections::HashMap;
 
 #[derive(Serialize,Clone)]
 enum Action {
-	Mute,
-	Unmute,
 	UpdateSynth(u32),
 	DeleteSynth(u32),
 	UpdateChain(u32,u32),
@@ -66,7 +64,7 @@ enum Action {
 #[derive(Serialize, Clone)]
 struct Update {
 	id: u64,
-	action: Action
+	action: UpdateRoot
 }
 
 struct UpdateList {
@@ -82,7 +80,7 @@ impl UpdateList {
 		};
 	}
 
-	pub async fn push(&self, action: Action) {
+	pub async fn push(&self, action: UpdateRoot) {
 		let mut guard = self.updates.lock().await;
 		let id = guard.0;
 		guard.1.push_back( Update{ id, action} );
@@ -109,7 +107,7 @@ async fn muted(state: State<'_, GuiState>, user: String) -> Result<rocket::respo
 		Ok(m) =>
 		{
 			*state.muted.lock().await = m;
-			state.update_list.push(Action::Mute).await;
+			//state.update_list.push(Action::Mute).await; FIXME delete this whole function and below
 			let mut lock = state.mutex.lock().await;
 			lock.engine.add_take(0);
 			Ok(rocket::response::status::Accepted(None))
@@ -139,36 +137,77 @@ async fn muted_get(state: State<'_,GuiState>) -> json::Json<bool> {
 	return json::Json(muted);
 }
 
+fn make_update_synth(synth: &Synth) -> UpdateRoot {
+	UpdateRoot {
+		synths: vec![UpdateSynth {
+			id: synth.id,
+			name: Some(synth.name.clone()),
+			chains: None,
+			deleted: None
+		}]
+	}
+}
+
+fn make_update_chain(chain: &Chain, synthid: u32) -> UpdateRoot {
+	UpdateRoot {
+		synths: vec![UpdateSynth {
+			id: synthid,
+			name: None,
+			deleted: None,
+			chains: Some(vec![UpdateChain {
+				id: chain.id,
+				name: Some(chain.name.clone()),
+				takes: None,
+				deleted: None
+			}])
+		}]
+	}
+}
+
+#[derive(Serialize, Clone)]
 struct UpdateRoot {
 	synths: Vec<UpdateSynth>
 }
 
+#[derive(Serialize, Clone)]
 struct UpdateSynth {
 	id: u32,
+	#[serde(skip_serializing_if = "Option::is_none")]
 	name: Option<String>,
+	#[serde(skip_serializing_if = "Option::is_none")]
 	chains: Option<Vec<UpdateChain>>,
+	#[serde(skip_serializing_if = "Option::is_none")]
 	deleted: Option<bool>
 }
 
+#[derive(Serialize, Clone)]
 struct UpdateChain {
 	id: u32,
+	#[serde(skip_serializing_if = "Option::is_none")]
 	name: Option<String>,
+	#[serde(skip_serializing_if = "Option::is_none")]
 	takes: Option<Vec<UpdateTake>>,
+	#[serde(skip_serializing_if = "Option::is_none")]
 	deleted: Option<bool>
 }
 
+#[derive(Serialize, Clone)]
 struct UpdateTake {
 	id: u32,
+	#[serde(skip_serializing_if = "Option::is_none")]
 	name: Option<String>,
+	#[serde(skip_serializing_if = "Option::is_none")]
 	muted: Option<bool>,
+	#[serde(skip_serializing_if = "Option::is_none")]
 	muted_scheduled: Option<bool>,
+	#[serde(skip_serializing_if = "Option::is_none")]
 	associated_midi_takes: Option<Vec<u32>>,
+	#[serde(skip_serializing_if = "Option::is_none")]
 	deleted: Option<bool>
 }
 
-
 #[get("/updates?<since>&<seconds>")]
-async fn updates(state: State<'_, GuiState>, since: u64, seconds: u64) -> json::Json< Vec<Update> > {
+async fn updates(state: State<'_, GuiState>, since: u64, seconds: u64) -> json::Json<Vec<Update>> {
 	json::Json(state.update_list.poll(Duration::from_secs(seconds), since).await)
 }
 
@@ -392,14 +431,14 @@ async fn post_synth(state: State<'_, GuiState>, data: Json<ChainPost>) -> Result
 	let name = gen_unique_name(&data.name, guard.synths.iter().map(|c|&c.name[..]));
 
 	if let Ok(engine_mididevice_id) = guard.engine.add_mididevice(&name) {
-		guard.synths.push( Synth {
+		let new_synth = Synth {
 			id,
 			chains: Vec::new(),
 			name,
 			engine_mididevice_id
-		});
-
-		state.update_list.push(Action::UpdateSynth(id)).await;
+		};
+		state.update_list.push(make_update_synth(&new_synth)).await;
+		guard.synths.push(new_synth);
 
 		return Ok(rocket::response::status::Created::new(format!("/api/synths/{}", id)));
 	}
@@ -417,14 +456,14 @@ async fn post_chain(state: State<'_, GuiState>, synthid: u32, data: Json<ChainPo
 		let name = gen_unique_name(&(synth.name.clone() + "_" + &data.name), synth.chains.iter().map(|c|&c.name[..]));
 
 		if let Ok(engine_audiodevice_id) = guard.engine.add_device(&name, 2) {
-			synth.chains.push( Chain {
+			let new_chain = Chain {
 				id,
 				takes: Vec::new(),
 				name,
 				engine_audiodevice_id
-			});
-
-			state.update_list.push(Action::UpdateChain(synthid, id)).await;
+			};
+			state.update_list.push(make_update_chain(&new_chain, synthid)).await;
+			synth.chains.push(new_chain);
 
 			return Ok(rocket::response::status::Created::new(format!("/api/synths/{}/chains/{}", synthid, id)));
 		}

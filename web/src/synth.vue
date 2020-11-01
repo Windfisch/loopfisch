@@ -24,7 +24,9 @@ module.exports = {
 
 				json = await response.json();
 				console.log(json);
-				this.model.chains.push(json);
+				if (this.model.chains.find(x => x.id === json.id) === undefined) {
+					this.model.chains.push(json);
+				}
 				console.log(this.model);
 			}
 			else {
