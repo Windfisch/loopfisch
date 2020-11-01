@@ -10,19 +10,6 @@ Vue.component("take", take);
 Vue.component("chain", chain);
 Vue.component("synth", synth);
 
-	function foo() {
-		var take3 = { name: "Flausch (MIDI)", audio: false, midi: true, audiomute: false, midimute: true};
-		var take4 = { name: "Filter control", audio: false, midi: true, audiomute: false, midimute: false};
-		var take1 = { name: "Flausch", audio: true, midi: true, audiomute: true, midimute: false, associated_midi_takes:[take3] };
-		var take2 = { name: "gefiltertes Flausch", audio: true, midi: true, audiomute: false, midimute: false, associated_midi_takes:[take3, take4]};
-		return {
-			show_midi: "true",
-			takes: [
-				take1, take2, take3, take4
-			]
-		}
-	}
-
 var app2 = new Vue({
 	el: '#app',
 	data: {

@@ -100,41 +100,9 @@ impl UpdateList {
 	}
 }
 
-#[patch("/muted", format = "application/json", data = "<user>")]
-async fn muted(state: State<'_, GuiState>, user: String) -> Result<rocket::response::status::Accepted<()>, rocket::response::status::BadRequest<()>> {
-	let muted: serde_json::Result<bool> = serde_json::from_str(&user);
-	match muted {
-		Ok(m) =>
-		{
-			*state.muted.lock().await = m;
-			//state.update_list.push(Action::Mute).await; FIXME delete this whole function and below
-			let mut lock = state.mutex.lock().await;
-			lock.engine.add_take(0);
-			Ok(rocket::response::status::Accepted(None))
-		},
-		Err(_) =>
-		{
-			Err(rocket::response::status::BadRequest(None))
-		}
-	}
-}
-
-#[patch("/muted", data = "<user>", rank=2)]
-fn muted2(state: State<'_, GuiState>, user: String) -> rocket::response::status::BadRequest<&str> {
-	rocket::response::status::BadRequest(Some("Foo\n"))
-}
-
-
 #[options("/<path..>")]
-fn muted_options(path: PathBuf) {
+fn options(path: PathBuf) {
 
-}
-
-#[get("/muted")]
-async fn muted_get(state: State<'_,GuiState>) -> json::Json<bool> {
-	let guard = state.muted.lock().await;
-	let muted = *guard;
-	return json::Json(muted);
 }
 
 fn make_update_synth(synth: &Synth) -> UpdateRoot {
@@ -263,45 +231,6 @@ async fn takes_get_one(state: State<'_, GuiState>, synthnum: u32, chainnum:u32, 
 	).flatten().flatten()
 }
 
-
-mod json_patch
-{
-	use serde::{Serialize,Deserialize};
-
-	#[derive(Serialize,Deserialize)]
-	pub struct Path {
-		pub path: String,
-	}
-	#[derive(Serialize,Deserialize)]
-	pub struct PathValue {
-		pub path: String,
-		pub value: String
-	}
-	#[derive(Serialize,Deserialize)]
-	pub struct PathFrom {
-		pub path: String,
-		pub from: String
-	}
-	#[derive(Serialize,Deserialize)]
-	#[serde(rename_all = "lowercase", tag="op")]
-	pub enum JsonPatch {
-		Add(PathValue),
-		Remove(Path),
-		Replace(PathValue),
-		Copy(PathFrom),
-		From(PathFrom),
-		Test(PathValue)
-	}
-}
-
-/*#[patch("/<path..>", data="<data>")]
-async fn patch(state: State<'_, GuiState>, path: PathBuf, data: Json<Vec<json_patch::JsonPatch>>) {
-	for op in data.iter() {
-		match op {
-			json_patch::JsonPatch::Replace(
-		}
-	}
-}*/
 
 #[derive(Deserialize,Clone)]
 struct SynthPatch {
@@ -632,14 +561,12 @@ struct GuiMutexedState {
 
 struct GuiState {
 	update_list: UpdateList,
-	muted: Mutex<bool>,
 	mutex: Mutex<GuiMutexedState>,
 }
 
 pub async fn launch_server(engine: FrontendThreadState) {
 	let state = GuiState {
 		update_list: UpdateList::new(),
-		muted: Mutex::new(true),
 		mutex: Mutex::new( GuiMutexedState {
 			engine,
 			synths: vec![
@@ -665,13 +592,14 @@ pub async fn launch_server(engine: FrontendThreadState) {
 	rocket::ignite()
 		.manage(state)
 		.mount("/api", routes![
-			updates,muted,muted2, muted_options, muted_get,
+			options,
+			updates,
 			synths_get, synths_get_one,
 			chains_get, chains_get_one,
 			takes_get, takes_get_one,
 			patch_synths, patch_synth, post_synth,
 			patch_chains, patch_chain, post_chain,
-			patch_takes, patch_take,
+			patch_takes, patch_take, post_take,
 		])
 		.register(catchers![not_found])
 		.attach(CORS())
