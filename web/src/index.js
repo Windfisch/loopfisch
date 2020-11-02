@@ -194,6 +194,38 @@ var app2 = new Vue({
 		]
 	},
 	methods: {
+		async add_synth_clicked() {
+			var post = await fetch("http://localhost:8000/api/synths", {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				redirect: 'follow',
+				mode: 'cors',
+				body: JSON.stringify({
+					"name": "New Synth"
+				})
+			});
+			if (post.status == 201) {
+				path = post.headers.get('Location');
+				console.log(path);
+
+				var response = await fetch("http://localhost:8000"+path);
+				if (response.status !== 200) {
+					console.log("whoopsie :o");
+					return;
+				}
+
+				json = await response.json();
+				console.log(json);
+				if (this.synths.find(x => x.id === json.id) === undefined) {
+					this.synths.push(json);
+				}
+				console.log(this.synths);
+			}
+			else {
+				alert("Failed to create synth!");
+			}
+
+		}
 	}
 })
 
