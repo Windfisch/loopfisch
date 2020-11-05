@@ -170,7 +170,7 @@ impl FrontendThreadState {
 		}
 	}
 
-	pub fn add_take(&mut self, dev_id: usize) -> Result<(),()> {
+	pub fn add_take(&mut self, dev_id: usize, unmuted: bool) -> Result<u32,()> {
 		let id = self.next_id.gen();
 
 		let n_channels = self.devices[&dev_id].info.n_channels;
@@ -179,18 +179,18 @@ impl FrontendThreadState {
 			record_state: RecordState::Waiting,
 			id,
 			dev_id,
-			unmuted: true,
+			unmuted,
 			playing: false,
 			started_recording_at: 0
 		};
 		let take_node = Box::new(TakeNode::new(take));
 
 		self.new_take_channel.send_message(Message::NewTake(take_node))?;
-		self.devices.get_mut(&dev_id).unwrap().takes.push(GuiTake{id, dev_id, unmuted: true});
-		Ok(())
+		self.devices.get_mut(&dev_id).unwrap().takes.push(GuiTake{id, dev_id, unmuted});
+		Ok(id)
 	}
 
-	pub fn add_miditake(&mut self, mididev_id: usize) -> Result<(),()> {
+	pub fn add_miditake(&mut self, mididev_id: usize, unmuted: bool) -> Result<u32,()> {
 		let id = self.next_id.gen();
 
 		let take = MidiTake {
@@ -198,8 +198,8 @@ impl FrontendThreadState {
 			record_state: RecordState::Waiting,
 			id,
 			mididev_id,
-			unmuted: true,
-			unmuted_old: true,
+			unmuted,
+			unmuted_old: unmuted,
 			playing: false,
 			started_recording_at: 0,
 			current_position: 0,
@@ -209,8 +209,8 @@ impl FrontendThreadState {
 		let take_node = Box::new(MidiTakeNode::new(take));
 
 		self.new_take_channel.send_message(Message::NewMidiTake(take_node))?;
-		self.mididevices.get_mut(&mididev_id).unwrap().takes.push(GuiMidiTake{id, mididev_id, unmuted: true});
-		Ok(())
+		self.mididevices.get_mut(&mididev_id).unwrap().takes.push(GuiMidiTake{id, mididev_id, unmuted});
+		Ok(id)
 	}
 
 	pub fn toggle_take_muted(&mut self, dev_id: usize, take_id: usize) -> Result<(),()> {

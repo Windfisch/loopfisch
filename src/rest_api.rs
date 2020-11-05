@@ -260,6 +260,11 @@ struct TakePatch {
 	associated_midi_takes: Option<Vec<u32>>,
 }
 
+#[derive(Deserialize,Clone)]
+struct TakePost {
+	name: Option<String>,
+}
+
 
 
 #[patch("/synths", data="<patch>")]
@@ -415,11 +420,45 @@ async fn post_chain(state: State<'_, GuiState>, synthid: u32, data: Json<ChainPo
 	Err(Status::NotFound)
 }
 #[post("/synths/<synthid>/chains/<chainid>/takes", data="<data>")]
-async fn post_take(state: State<'_, GuiState>, synthid: u32, chainid: u32, data: Json<Vec<TakePatch>>) -> Result<(), Status> {
-	let mut guard = state.mutex.lock().await;
+async fn post_take(state: State<'_, GuiState>, synthid: u32, chainid: u32, data: Json<TakePost>) -> Result<(), Status> {
+	let mut guard_ = state.mutex.lock().await;
+	let guard = &mut *guard_;
 	if let Some(synth) = guard.synths.iter_mut().find(|s| s.id == synthid) {
 		if let Some(chain) = synth.chains.iter_mut().find(|c| c.id == chainid) {
-			// TODO
+			let audio_id = guard.take_id.gen();
+			let midi_id = guard.take_id.gen();
+			let name = gen_unique_name(data.name.as_deref().unwrap_or("Take"), chain.takes.iter().map(|c|&c.name[..]));
+
+			let mut associated_midi_takes: Vec<u32> =
+				chain.takes.iter()
+					.filter( |t| t.is_midi() && !t.is_audible() )
+					.map(|t| t.id)
+					.collect();
+			associated_midi_takes.push(midi_id);
+
+			// FIXME this is racy! there should be an atomic function for adding multiple takes at once!
+			// FIXME and the unwrap... there is so much wrong with this.
+			let engine_miditake_id = guard.engine.add_miditake(synth.engine_mididevice_id, true).unwrap();
+			let engine_audiotake_id = guard.engine.add_take(chain.engine_audiodevice_id, false).unwrap();
+
+			chain.takes.push( Take {
+				id: audio_id,
+				engine_take_id: EngineTakeRef::Audio(engine_audiotake_id),
+				name: name.clone(),
+				muted: true,
+				muted_scheduled: false,
+				state: RecordingState::Waiting,
+				associated_midi_takes
+			});
+			chain.takes.push( Take {
+				id: midi_id,
+				engine_take_id: EngineTakeRef::Midi(engine_miditake_id),
+				name,
+				muted: false,
+				muted_scheduled: false,
+				state: RecordingState::Waiting,
+				associated_midi_takes: Vec::new()
+			});
 			return Ok(());
 		}
 	}
@@ -555,18 +594,63 @@ struct Chain {
 	engine_audiodevice_id: usize
 }
 
+#[derive(Serialize,Clone,PartialEq)]
+enum RecordingState {
+	Waiting,
+	Recording,
+	Finished
+}
+
+#[derive(Clone)]
+enum EngineTakeRef {
+	Audio(u32),
+	Midi(u32)
+}
+
+impl Serialize for EngineTakeRef {
+	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+		where S: serde::Serializer,
+		{
+			match *self {
+				EngineTakeRef::Audio(_) => serializer.serialize_unit_variant("EngineTakeRef", 0, "Audio"),
+				EngineTakeRef::Midi(_) => serializer.serialize_unit_variant("EngineTakeRef", 1, "Midi"),
+			}
+		}
+}
+
 #[derive(Serialize,Clone)]
 struct Take {
 	id: u32,
 	name: String,
+	#[serde(rename="type")]
+	engine_take_id: EngineTakeRef,
+	state: RecordingState,
 	muted: bool,
 	muted_scheduled: bool,
 	associated_midi_takes: Vec<u32>,
 }
 
+impl Take {
+	pub fn is_midi(&self) -> bool {
+		if let EngineTakeRef::Midi(_) = self.engine_take_id {
+			return true;
+		}
+		else {
+			return false;
+		}
+	}
+
+	pub fn is_audio(&self) -> bool { return !self.is_midi(); }
+
+	pub fn is_audible(&self) -> bool {
+		return self.state == RecordingState::Finished && self.muted == false;
+	}
+}
+
 struct GuiMutexedState {
 	engine: FrontendThreadState,
 	synths: Vec<Synth>,
+	take_id: IdGenerator,
 	chain_id: IdGenerator,
 	synth_id: IdGenerator,
 }
@@ -596,6 +680,7 @@ pub async fn launch_server(engine: FrontendThreadState) {
 					]
 				}
 			],
+			take_id: IdGenerator::new(),
 			chain_id: IdGenerator::new(),
 			synth_id: IdGenerator::new()
 		})
