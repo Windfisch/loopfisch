@@ -398,7 +398,6 @@ async fn post_chain(state: State<'_, GuiState>, synthid: u32, data: Json<ChainPo
 	let guard = &mut *guard_;
 	if let Some(synth) = guard.synths.iter_mut().find(|s| s.id == synthid) {
 		let id = guard.chain_id.gen();
-
 		let name = gen_unique_name(&(synth.name.clone() + "_" + &data.name), synth.chains.iter().map(|c|&c.name[..]));
 
 		if let Ok(engine_audiodevice_id) = guard.engine.add_device(&name, 2) {
