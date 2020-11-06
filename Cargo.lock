@@ -453,6 +453,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f7531096570974c3a9dcf9e4b8e1cede1ec26cf5046219fb3b9d897503b9be59"
 
 [[package]]
+name = "eventfd"
+version = "0.2.0"
+source = "git+https://github.com/jkryl/eventfd-rust?rev=4e7c14af4b32bd764f46788c5098c951e47b38f9#4e7c14af4b32bd764f46788c5098c951e47b38f9"
+dependencies = [
+ "nix",
+]
+
+[[package]]
 name = "fastrand"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -896,6 +904,7 @@ dependencies = [
  "assert_no_alloc",
  "async-std",
  "crossterm",
+ "eventfd",
  "intrusive-collections",
  "jack",
  "ringbuf",
@@ -905,6 +914,7 @@ dependencies = [
  "serde_json",
  "smallvec",
  "tokio",
+ "tokio-fd",
 ]
 
 [[package]]
@@ -989,6 +999,19 @@ dependencies = [
  "cfg-if",
  "libc",
  "winapi 0.3.9",
+]
+
+[[package]]
+name = "nix"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "becb657d662f1cd2ef38c7ad480ec6b8cf9e96b27adb543e594f9cf0f2e6065c"
+dependencies = [
+ "bitflags",
+ "cc",
+ "cfg-if",
+ "libc",
+ "void",
 ]
 
 [[package]]
@@ -1588,6 +1611,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio-fd"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a689628c2ae79bb98a552c9b06e015942d153887b862e782ccaf4c6160b4ac40"
+dependencies = [
+ "libc",
+ "mio",
+ "tokio",
+]
+
+[[package]]
 name = "tokio-macros"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1702,6 +1736,12 @@ name = "version_check"
 version = "0.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b5a972e5669d67ba988ce3dc826706fb0a8b01471c088cb0b6110b805cc36aed"
+
+[[package]]
+name = "void"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a02e4885ed3bc0f2de90ea6dd45ebcbb66dacffe03547fadbb0eeae2770887d"
 
 [[package]]
 name = "waker-fn"
