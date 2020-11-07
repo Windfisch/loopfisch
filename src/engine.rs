@@ -16,9 +16,27 @@ use crate::metronome::AudioMetronome;
 use crate::outsourced_allocation_buffer::Buffer;
 
 use assert_no_alloc::assert_no_alloc;
+use crate::realtime_send_queue;
+
+use std::future;
+use std::pin::Pin;
+use std::task;
+use tokio_fd;
+
+use std::os::unix::io::AsRawFd;
+use std::convert::TryFrom;
+use tokio::io::AsyncReadExt;
+
+use eventfd::EventFD;
+
+pub enum Event {
+	AudioTakeStateChanged(usize, u32, RecordState),
+	MidiTakeStateChanged(usize, u32, RecordState),
+	Kill
+}
 
 #[derive(std::cmp::PartialEq, Debug)]
-enum RecordState {
+pub enum RecordState {
 	Waiting,
 	Recording,
 	Finished
@@ -78,7 +96,8 @@ pub struct AudioThreadState {
 	transport_position: u32, // does not wrap 
 	song_position: u32, // wraps
 	song_length: u32,
-	shared: Arc<SharedThreadState>
+	shared: Arc<SharedThreadState>,
+	event_channel: realtime_send_queue::Producer<Event>,
 }
 
 pub struct SharedThreadState {
@@ -236,8 +255,7 @@ fn pad_option_vec<T>(vec: Vec<T>, size: usize) -> Vec<Option<T>> {
 		.collect()
 }
 
-pub fn create_thread_states(client: jack::Client, devices: Vec<AudioDevice>, mididevices: Vec<MidiDevice>, metronome: AudioMetronome, song_length: u32) -> FrontendThreadState {
-
+pub fn create_thread_states(client: jack::Client, devices: Vec<AudioDevice>, mididevices: Vec<MidiDevice>, metronome: AudioMetronome, song_length: u32) -> (FrontendThreadState, realtime_send_queue::Consumer<Event>) {
 	let shared = Arc::new(SharedThreadState {
 		song_length: AtomicU32::new(1),
 		song_position: AtomicU32::new(0),
@@ -249,6 +267,8 @@ pub fn create_thread_states(client: jack::Client, devices: Vec<AudioDevice>, mid
 	let frontend_devices = devices.iter().enumerate().map(|d| (d.0, GuiAudioDevice { info: d.1.info(), takes: Vec::new() }) ).collect();
 	let frontend_mididevices = mididevices.iter().enumerate().map(|d| (d.0, GuiMidiDevice { info: d.1.info(), takes: Vec::new() }) ).collect();
 
+	let (event_producer, event_consumer) = realtime_send_queue::new(64);
+
 	let mut audio_thread_state = AudioThreadState {
 		devices: pad_option_vec(devices, 32),
 		mididevices: pad_option_vec(mididevices, 32),
@@ -259,7 +279,8 @@ pub fn create_thread_states(client: jack::Client, devices: Vec<AudioDevice>, mid
 		transport_position: 0,
 		song_position: 0,
 		song_length,
-		shared: Arc::clone(&shared)
+		shared: Arc::clone(&shared),
+		event_channel: event_producer
 	};
 	
 	let process_callback = move |client: &jack::Client, ps: &jack::ProcessScope| -> jack::Control {
@@ -279,7 +300,14 @@ pub fn create_thread_states(client: jack::Client, devices: Vec<AudioDevice>, mid
 	};
 
 
-	return frontend_thread_state;
+	return (frontend_thread_state, event_consumer);
+}
+
+impl Drop for AudioThreadState {
+	fn drop(&mut self) {
+		println!("\n\n\n############# Dropping AudioThreadState\n\n\n");
+		self.event_channel.send(Event::Kill);
+	}
 }
 
 impl AudioThreadState {
@@ -464,12 +492,14 @@ impl AudioThreadState {
 
 				if song_wraps {
 					println!("\nFinished recording on device {}", t.dev_id);
+					self.event_channel.send(Event::AudioTakeStateChanged(t.dev_id, t.id, RecordState::Finished));
 					t.record_state = Finished;
 				}
 			}
 			else if t.record_state == Waiting {
 				if song_wraps {
 					println!("\nStarted recording on device {}", t.dev_id);
+					self.event_channel.send(Event::AudioTakeStateChanged(t.dev_id, t.id, RecordState::Recording));
 					t.record_state = Recording;
 					t.started_recording_at = self.transport_position + song_wraps_at;
 					t.record(scope, dev, song_wraps_at as usize ..scope.n_frames() as usize);
@@ -498,12 +528,14 @@ impl AudioThreadState {
 
 				if song_wraps {
 					println!("\nFinished recording on device {}", t.mididev_id);
+					self.event_channel.send(Event::MidiTakeStateChanged(t.mididev_id, t.id, RecordState::Finished));
 					t.record_state = Finished;
 				}
 			}
 			else if t.record_state == Waiting {
 				if song_wraps {
 					println!("\nStarted recording on device {}", t.mididev_id);
+					self.event_channel.send(Event::MidiTakeStateChanged(t.mididev_id, t.id, RecordState::Recording));
 					t.record_state = Recording;
 					t.started_recording_at = self.transport_position + song_wraps_at;
 					t.record(scope, dev, song_wraps_at as usize ..scope.n_frames() as usize);
@@ -543,7 +575,7 @@ where
 	}
 }
 
-pub fn launch() -> FrontendThreadState {
+pub fn launch() -> (FrontendThreadState, realtime_send_queue::Consumer<Event>) {
 	let (client, _status) = jack::Client::new("loopfisch", jack::ClientOptions::NO_START_SERVER).unwrap();
 
 	println!("JACK running with sampling rate {} Hz, buffer size = {} samples", client.sample_rate(), client.buffer_size());
@@ -558,7 +590,7 @@ pub fn launch() -> FrontendThreadState {
 	let metronome = AudioMetronome::new(&client).unwrap();
 
 	let loop_length = client.sample_rate() as u32 * 4;
-	let frontend_thread_state = create_thread_states(client, devices, mididevs, metronome, loop_length);
+	let (frontend_thread_state, event_queue) = create_thread_states(client, devices, mididevs, metronome, loop_length);
 
 
 	frontend_thread_state.async_client.as_client().connect_ports_by_name("loopfisch:fnord_out1", "system:playback_1").unwrap();
@@ -566,7 +598,7 @@ pub fn launch() -> FrontendThreadState {
 	frontend_thread_state.async_client.as_client().connect_ports_by_name("system:capture_1", "loopfisch:fnord_in1").unwrap();
 	frontend_thread_state.async_client.as_client().connect_ports_by_name("system:capture_2", "loopfisch:fnord_in2").unwrap();
 
-	return frontend_thread_state;
+	return (frontend_thread_state, event_queue);
 }
 
 fn play_silence(scope: &jack::ProcessScope, device: &mut AudioDevice, range: std::ops::Range<usize>) {

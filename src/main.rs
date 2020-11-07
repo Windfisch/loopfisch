@@ -24,6 +24,7 @@ mod id_generator;
 use tokio;
 
 mod rest_api;
+mod realtime_send_queue;
 
 #[macro_use] extern crate rocket;
 
@@ -43,16 +44,7 @@ static A: assert_no_alloc::AllocDisabler = assert_no_alloc::AllocDisabler;
 async fn main() {
     println!("Hello, world!");
 
-	let engine = engine::launch();
-	//let frontend_thread_state = engine.get_frontend_thread_state();
-
-	/*let mut rt = tokio::runtime::Builder::new()
-		.threaded_scheduler()
-		.enable_all()
-		.build()
-		.unwrap();*/
-
-	rest_api::launch_server(engine).await;
-	//rt.block_on(rest_api::launch_server(frontend_thread_state));
+	let (engine, event_queue) = engine::launch();
+	rest_api::launch_server(engine, event_queue).await;
 	return;
 }

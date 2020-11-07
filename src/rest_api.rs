@@ -13,6 +13,7 @@ use async_std;
 use rocket::http::Method;
 use std::path::PathBuf;
 use crate::id_generator::IdGenerator;
+use crate::realtime_send_queue;
 
 
 use rocket::{Request, Response};
@@ -655,13 +656,14 @@ struct GuiMutexedState {
 }
 
 struct GuiState {
-	update_list: UpdateList,
+	update_list: Arc<UpdateList>,
 	mutex: Mutex<GuiMutexedState>,
 }
 
-pub async fn launch_server(engine: FrontendThreadState) {
+pub async fn launch_server(engine: FrontendThreadState, event_channel_: realtime_send_queue::Consumer<Event>) {
+	let update_list = Arc::new(UpdateList::new());
 	let state = GuiState {
-		update_list: UpdateList::new(),
+		update_list: update_list.clone(),
 		mutex: Mutex::new( GuiMutexedState {
 			engine,
 			synths: vec![
@@ -684,6 +686,27 @@ pub async fn launch_server(engine: FrontendThreadState) {
 			synth_id: IdGenerator::new()
 		})
 	};
+
+	let mut event_channel = event_channel_;
+	tokio::task::spawn( async move {
+		loop {
+			match event_channel.receive().await
+			{
+				Event::AudioTakeStateChanged(dev_id, take_id, new_state) =>
+				{
+					println!("\n\n\n############# audio state {:?}\n\n\n", new_state);
+				}
+				Event::MidiTakeStateChanged(mididev_id, take_id, new_state) =>
+				{
+					println!("\n\n\n############# midi state {:?}\n\n\n", new_state);
+				}
+				Event::Kill =>
+				{
+					println!("\n\n\n############# error reading\n\n\n"); break;
+				}
+			}
+		}
+	});
 	
 	rocket::ignite()
 		.manage(state)
