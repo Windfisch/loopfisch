@@ -14,7 +14,7 @@ use crate::outsourced_allocation_buffer::Buffer;
 
 pub struct AudioTake {
 	/// Sequence of all samples. The take's duration and playhead position are implicitly managed by the underlying Buffer.
-	pub(super) samples: Vec<Buffer<f32>>,
+	pub samples: Vec<Buffer<f32>>,
 	pub record_state: RecordState,
 	pub id: u32,
 	pub audiodev_id: usize,
@@ -83,11 +83,11 @@ impl AudioTake {
 
 pub struct MidiTake {
 	/// Sorted sequence of all events with timestamps between 0 and self.duration
-	pub(super) events: Buffer<MidiMessage>,
+	pub events: Buffer<MidiMessage>,
 	/// Current playhead position
-	pub(super) current_position: u32,
+	pub current_position: u32,
 	/// Number of frames after which the recorded events shall loop.
-	pub(super) duration: u32,
+	pub duration: u32,
 	pub record_state: RecordState,
 	pub id: u32,
 	pub mididev_id: usize,
@@ -95,7 +95,7 @@ pub struct MidiTake {
 	pub unmuted_old: bool,
 	pub playing: bool,
 	pub started_recording_at: u32,
-	pub(super) note_registry: RefCell<MidiNoteRegistry> // this SUCKS. TODO.
+	pub note_registry: RefCell<MidiNoteRegistry> // this SUCKS. TODO.
 }
 
 impl std::fmt::Debug for MidiTake {

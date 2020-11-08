@@ -63,12 +63,12 @@ where
 }
 
 pub struct FrontendThreadState {
-	pub(super) command_channel: RetryChannelPush<Message>,
-	pub(super) devices: HashMap<usize, GuiAudioDevice>,
-	pub(super) mididevices: HashMap<usize, GuiMidiDevice>,
+	pub command_channel: RetryChannelPush<Message>,
+	pub devices: HashMap<usize, GuiAudioDevice>,
+	pub mididevices: HashMap<usize, GuiMidiDevice>,
 	pub shared: Arc<SharedThreadState>,
-	pub(super) next_id: IdGenerator,
-	pub(super) async_client: Box<dyn IntoJackClient> // FIXME pub super sucks
+	pub next_id: IdGenerator,
+	pub async_client: Box<dyn IntoJackClient>
 }
 
 impl FrontendThreadState {
