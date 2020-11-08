@@ -1,4 +1,4 @@
-use serde::{Serialize,Deserialize};
+use serde::Serialize;
 use std::time::Duration;
 use rocket::State;
 use rocket_contrib::json::Json;

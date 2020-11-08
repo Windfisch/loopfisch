@@ -1,5 +1,5 @@
 use rocket::fairing::{Fairing, Info, Kind};
-use rocket::http::{Status, Header, ContentType};
+use rocket::http::{Header, ContentType};
 use rocket::{Request, Response};
 use rocket::http::Method;
 use std::io::Cursor;
