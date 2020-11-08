@@ -75,6 +75,12 @@ enum Message {
 	DeleteTake(u32)
 }
 
+enum DestructionRequest {
+	AudioDevice(AudioDevice),
+	MidiDevice(MidiDevice),
+	End
+}
+
 pub struct AudioThreadState {
 	devices: Vec<Option<AudioDevice>>,
 	mididevices: Vec<Option<MidiDevice>>,
@@ -87,6 +93,8 @@ pub struct AudioThreadState {
 	song_length: u32,
 	shared: Arc<SharedThreadState>,
 	event_channel: realtime_send_queue::Producer<Event>,
+	destructor_thread_handle: std::thread::JoinHandle<()>,
+	destructor_channel: ringbuf::Producer<DestructionRequest>
 }
 
 pub struct SharedThreadState {
@@ -258,6 +266,21 @@ pub fn create_thread_states(client: jack::Client, devices: Vec<AudioDevice>, mid
 
 	let (event_producer, event_consumer) = realtime_send_queue::new(64);
 
+	let (destruction_sender, mut destruction_receiver) = ringbuf::RingBuffer::<DestructionRequest>::new(32).split();
+	let destructor_thread_handle = std::thread::spawn(move || {
+		loop {
+			std::thread::park();
+			println!("Handling deconstruction request");
+			while let Some(request) = destruction_receiver.pop() {
+				match request {
+					DestructionRequest::AudioDevice(dev) => std::mem::drop(dev),
+					DestructionRequest::MidiDevice(dev) => std::mem::drop(dev),
+					DestructionRequest::End => {println!("destructor thread exiting..."); break;}
+				}
+			}
+		}
+	});
+
 	let mut audio_thread_state = AudioThreadState {
 		devices: pad_option_vec(devices, 32),
 		mididevices: pad_option_vec(mididevices, 32),
@@ -269,7 +292,9 @@ pub fn create_thread_states(client: jack::Client, devices: Vec<AudioDevice>, mid
 		song_position: 0,
 		song_length,
 		shared: Arc::clone(&shared),
-		event_channel: event_producer
+		event_channel: event_producer,
+		destructor_thread_handle,
+		destructor_channel: destruction_sender
 	};
 	
 	let process_callback = move |client: &jack::Client, ps: &jack::ProcessScope| -> jack::Control {
@@ -296,6 +321,7 @@ impl Drop for AudioThreadState {
 	fn drop(&mut self) {
 		println!("\n\n\n############# Dropping AudioThreadState\n\n\n");
 		self.event_channel.send(Event::Kill).ok();
+		self.destructor_channel.push(DestructionRequest::End).ok();
 	}
 }
 
@@ -329,8 +355,11 @@ impl AudioThreadState {
 							std::mem::swap(&mut self.devices[id], &mut device);
 							
 							if let Some(old) = device {
-								// TODO FIXME: `device` must be sent to the frontend thread via ringbuffer so it can be freed there. freeing here is BAD.
-								panic!("Destructing old devices is not implemented yet");
+								println!("submitting deconstruction request");
+								if self.destructor_channel.push(DestructionRequest::AudioDevice(old)).is_err() {
+									panic!("Failed to submit deconstruction request");
+								}
+								self.destructor_thread_handle.thread().unpark();
 							}
 						}
 						Message::UpdateMidiDevice(id, mut device) => {
@@ -344,8 +373,11 @@ impl AudioThreadState {
 							std::mem::swap(&mut self.mididevices[id], &mut device);
 
 							if let Some(old) = device {
-								// TODO FIXME: `device` must be sent to the frontend thread via ringbuffer so it can be freed there. freeing here is BAD.
-								panic!("Destructing old devices is not implemented yet");
+								println!("submitting deconstruction request");
+								if self.destructor_channel.push(DestructionRequest::MidiDevice(old)).is_err() {
+									panic!("Failed to submit deconstruction request");
+								}
+								self.destructor_thread_handle.thread().unpark();
 							}
 						}
 						Message::NewTake(take) => { println!("\ngot take"); self.takes.push_back(take); }
