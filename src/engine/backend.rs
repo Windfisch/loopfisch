@@ -39,13 +39,6 @@ impl Drop for AudioThreadState {
 	}
 }
 
-fn pad_option_vec<T>(vec: Vec<T>, size: usize) -> Vec<Option<T>> {
-	let n = vec.len();
-	vec.into_iter().map(|v| Some(v))
-		.chain( (n..size).map(|_| None) )
-		.collect()
-}
-
 impl AudioThreadState {
 	// FIXME this function signature sucks
 	pub fn new(audiodevices: Vec<AudioDevice>, mididevices: Vec<MidiDevice>, metronome: AudioMetronome, command_channel: ringbuf::Consumer<Message>, song_length: u32, shared: Arc<SharedThreadState>, event_channel: realtime_send_queue::Producer<Event>) -> AudioThreadState
@@ -83,19 +76,32 @@ impl AudioThreadState {
 	}
 
 	pub fn process_callback(&mut self, _client: &jack::Client, scope: &jack::ProcessScope) -> jack::Control {
-		//println!("process from thread #{:?}", std::thread::current().id());
 		use RecordState::*;
 		assert_no_alloc(||{
+			assert!(scope.n_frames() < self.song_length);
 
-		self.metronome.process(self.song_position, self.song_length / 8, 4, scope);
+			self.metronome.process(self.song_position, self.song_length / 8, 4, scope);
 
+			self.process_command_channel();
 
-		assert!(scope.n_frames() < self.song_length);
+			self.process_audio_playback(scope);
+			self.process_midi_playback(scope);
 
-		use std::io::Write;
-		std::io::stdout().flush().unwrap();
+			self.process_audio_recording(scope);
+			self.process_midi_recording(scope);
 
-		// first, handle the take channel
+			self.song_position = (self.song_position + scope.n_frames()) % self.song_length;
+			self.transport_position += scope.n_frames();
+
+			self.shared.song_length.store(self.song_length, std::sync::atomic::Ordering::Relaxed);
+			self.shared.song_position.store(self.song_position, std::sync::atomic::Ordering::Relaxed);
+			self.shared.transport_position.store(self.transport_position, std::sync::atomic::Ordering::Relaxed);
+		});
+
+		jack::Control::Continue
+	}
+
+	fn process_command_channel(&mut self) {
 		loop {
 			match self.command_channel.pop() {
 				Some(msg) => {
@@ -174,8 +180,10 @@ impl AudioThreadState {
 				None => { break; }
 			}
 		}
+	}
 
-		// then, handle all playing takes
+	/** play all playing audio takes and start playback for those that are just leaving `Recording` state */
+	fn process_audio_playback(&mut self, scope: &jack::ProcessScope) {
 		for dev in self.devices.iter_mut() {
 			if let Some(d) = dev {
 				play_silence(scope,d,0..scope.n_frames() as usize);
@@ -198,7 +206,7 @@ impl AudioThreadState {
 				t.playback(scope,dev, 0..scope.n_frames() as usize);
 				if song_wraps { println!("\n10/10 would rewind\n"); }
 			}
-			else if t.record_state == Recording {
+			else if t.record_state == RecordState::Recording {
 				if song_wraps {
 					t.playing = true;
 					println!("\nAlmost finished recording on device {}, thus starting playback now", t.audiodev_id);
@@ -210,8 +218,9 @@ impl AudioThreadState {
 
 			cursor.move_next();
 		}
+	}
 
-		// then, handle all playing MIDI takes
+	fn process_midi_playback(&mut self, scope: &jack::ProcessScope) {
 		let mut cursor = self.miditakes.front();
 		while let Some(node) = cursor.get() {
 			let mut t = node.take.borrow_mut();
@@ -223,14 +232,11 @@ impl AudioThreadState {
 			let song_wraps = self.song_length <= song_position_after;
 			let song_wraps_at = min(self.song_length - song_position, scope.n_frames()) as usize;
 			
-
-
-			
 			if t.playing {
 				t.playback(dev, 0..scope.n_frames() as usize);
 				if song_wraps { println!("\n10/10 would rewind\n"); }
 			}
-			else if t.record_state == Recording {
+			else if t.record_state == RecordState::Recording {
 				if song_wraps {
 					t.playing = true;
 					println!("\nAlmost finished recording on midi device {}, thus starting playback now", t.mididev_id);
@@ -248,9 +254,11 @@ impl AudioThreadState {
 				d.commit_out_buffer(scope);
 			}
 		}
-		
+	}
 
-		// then, handle all armed takes and record into them
+
+	fn process_audio_recording(&mut self, scope: &jack::ProcessScope) {
+		use RecordState::*;
 		let mut cursor = self.audiotakes.front();
 		while let Some(node) = cursor.get() {
 			let mut t = node.take.borrow_mut();
@@ -285,8 +293,10 @@ impl AudioThreadState {
 
 			cursor.move_next();
 		}
+	}
 
-		// then, handle all armed MIDI takes and record into them
+	fn process_midi_recording(&mut self, scope: &jack::ProcessScope) {
+		use RecordState::*;
 		let mut cursor = self.miditakes.front();
 		while let Some(node) = cursor.get() {
 			let mut t = node.take.borrow_mut();
@@ -321,16 +331,6 @@ impl AudioThreadState {
 
 			cursor.move_next();
 		}
-
-		self.song_position = (self.song_position + scope.n_frames()) % self.song_length;
-		self.transport_position += scope.n_frames();
-
-		self.shared.song_length.store(self.song_length, std::sync::atomic::Ordering::Relaxed);
-		self.shared.song_position.store(self.song_position, std::sync::atomic::Ordering::Relaxed);
-		self.shared.transport_position.store(self.transport_position, std::sync::atomic::Ordering::Relaxed);
-		});
-
-		jack::Control::Continue
 	}
 }
 
@@ -341,5 +341,12 @@ fn play_silence(scope: &jack::ProcessScope, device: &mut AudioDevice, range: std
 			*d = 0.0;
 		}
 	}
+}
+
+fn pad_option_vec<T>(vec: Vec<T>, size: usize) -> Vec<Option<T>> {
+	let n = vec.len();
+	vec.into_iter().map(|v| Some(v))
+		.chain( (n..size).map(|_| None) )
+		.collect()
 }
 
