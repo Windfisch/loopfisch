@@ -17,6 +17,11 @@ pub struct Consumer<T> {
 }
 
 impl<T> Producer<T> {
+	pub fn send_or_complain(&mut self, message: T) {
+		if self.send(message).is_err() {
+			println!("Failed to send message in realtime_safe_queue. Message is lost.");
+		}
+	}
 	pub fn send(&mut self, message: T) -> Result<(),T> {
 		self.buffer.push(message)?;
 		self.eventfd.write(1).unwrap();

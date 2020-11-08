@@ -13,6 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+#![feature(proc_macro_hygiene)]
+
 mod engine;
 mod metronome;
 mod jack_driver;
@@ -21,8 +23,6 @@ mod bit_array;
 mod midi_registry;
 mod outsourced_allocation_buffer;
 mod id_generator;
-use tokio;
-
 mod rest_api;
 mod realtime_send_queue;
 

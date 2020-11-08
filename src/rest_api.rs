@@ -1,5 +1,3 @@
-#![feature(proc_macro_hygiene)]
-
 use crate::engine::*;
 
 use rocket_contrib::json;
@@ -7,7 +5,7 @@ use rocket_contrib::json;
 use rocket::State;
 //use std::sync::Mutex;
 use async_std::sync::Mutex;
-use std::time::{Duration,Instant};
+use std::time::Duration;
 use std::sync::Arc;
 use async_std;
 use rocket::http::Method;
@@ -50,8 +48,6 @@ impl Fairing for CORS {
 }
 
 
-use std::collections::HashMap;
-
 #[derive(Serialize,Clone)]
 enum Action {
 	UpdateSynth(u32),
@@ -91,7 +87,7 @@ impl UpdateList {
 
 	pub async fn poll(&self, timeout: Duration, since: u64) -> Vec<Update>
 	{
-		let (lock_guard, result) = self.condvar.wait_timeout_until(
+		let (lock_guard, _result) = self.condvar.wait_timeout_until(
 			self.updates.lock().await,
 			timeout,
 			|updates| updates.0 > since
@@ -101,8 +97,8 @@ impl UpdateList {
 	}
 }
 
-#[options("/<path..>")]
-fn options(path: PathBuf) {
+#[options("/<_path..>")]
+fn options(_path: PathBuf) {
 
 }
 
@@ -327,7 +323,7 @@ async fn patch_takes(state: State<'_, GuiState>, synthid: u32, chainid: u32, pat
 		if let Some(chain) = synth.chains.iter_mut().find(|c| c.id == chainid) {
 			patch_takes_(&mut chain.takes, &*patch, true)?;
 			patch_takes_(&mut chain.takes, &*patch, false).unwrap();
-			for p in patch.iter() {
+			for _p in patch.iter() {
 				// state.update_list.push(make_update_take(chain.takes.iter().find(|s| s.id == p.id).unwrap(), synthid, chainid)).await; TODO
 			}
 			return Ok(());

@@ -18,17 +18,6 @@ use crate::outsourced_allocation_buffer::Buffer;
 use assert_no_alloc::assert_no_alloc;
 use crate::realtime_send_queue;
 
-use std::future;
-use std::pin::Pin;
-use std::task;
-use tokio_fd;
-
-use std::os::unix::io::AsRawFd;
-use std::convert::TryFrom;
-use tokio::io::AsyncReadExt;
-
-use eventfd::EventFD;
-
 pub enum Event {
 	AudioTakeStateChanged(usize, u32, RecordState),
 	MidiTakeStateChanged(usize, u32, RecordState),
@@ -306,12 +295,12 @@ pub fn create_thread_states(client: jack::Client, devices: Vec<AudioDevice>, mid
 impl Drop for AudioThreadState {
 	fn drop(&mut self) {
 		println!("\n\n\n############# Dropping AudioThreadState\n\n\n");
-		self.event_channel.send(Event::Kill);
+		self.event_channel.send(Event::Kill).ok();
 	}
 }
 
 impl AudioThreadState {
-	fn process_callback(&mut self, client: &jack::Client, scope: &jack::ProcessScope) -> jack::Control {
+	fn process_callback(&mut self, _client: &jack::Client, scope: &jack::ProcessScope) -> jack::Control {
 		//println!("process from thread #{:?}", std::thread::current().id());
 		use RecordState::*;
 		assert_no_alloc(||{
@@ -492,14 +481,14 @@ impl AudioThreadState {
 
 				if song_wraps {
 					println!("\nFinished recording on device {}", t.dev_id);
-					self.event_channel.send(Event::AudioTakeStateChanged(t.dev_id, t.id, RecordState::Finished));
+					self.event_channel.send_or_complain(Event::AudioTakeStateChanged(t.dev_id, t.id, RecordState::Finished));
 					t.record_state = Finished;
 				}
 			}
 			else if t.record_state == Waiting {
 				if song_wraps {
 					println!("\nStarted recording on device {}", t.dev_id);
-					self.event_channel.send(Event::AudioTakeStateChanged(t.dev_id, t.id, RecordState::Recording));
+					self.event_channel.send_or_complain(Event::AudioTakeStateChanged(t.dev_id, t.id, RecordState::Recording));
 					t.record_state = Recording;
 					t.started_recording_at = self.transport_position + song_wraps_at;
 					t.record(scope, dev, song_wraps_at as usize ..scope.n_frames() as usize);
@@ -528,14 +517,14 @@ impl AudioThreadState {
 
 				if song_wraps {
 					println!("\nFinished recording on device {}", t.mididev_id);
-					self.event_channel.send(Event::MidiTakeStateChanged(t.mididev_id, t.id, RecordState::Finished));
+					self.event_channel.send_or_complain(Event::MidiTakeStateChanged(t.mididev_id, t.id, RecordState::Finished));
 					t.record_state = Finished;
 				}
 			}
 			else if t.record_state == Waiting {
 				if song_wraps {
 					println!("\nStarted recording on device {}", t.mididev_id);
-					self.event_channel.send(Event::MidiTakeStateChanged(t.mididev_id, t.id, RecordState::Recording));
+					self.event_channel.send_or_complain(Event::MidiTakeStateChanged(t.mididev_id, t.id, RecordState::Recording));
 					t.record_state = Recording;
 					t.started_recording_at = self.transport_position + song_wraps_at;
 					t.record(scope, dev, song_wraps_at as usize ..scope.n_frames() as usize);
