@@ -94,7 +94,7 @@ pub async fn post_take(state: State<'_, GuiState>, synthid: u32, chainid: u32, d
 			// FIXME this is racy! there should be an atomic function for adding multiple takes at once!
 			// FIXME and the unwrap... there is so much wrong with this.
 			let engine_miditake_id = guard.engine.add_miditake(synth.engine_mididevice_id, true).unwrap();
-			let engine_audiotake_id = guard.engine.add_take(chain.engine_audiodevice_id, false).unwrap();
+			let engine_audiotake_id = guard.engine.add_audiotake(chain.engine_audiodevice_id, false).unwrap();
 
 			chain.takes.push( Take {
 				id: audio_id,
