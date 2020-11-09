@@ -59,6 +59,14 @@ impl MidiDevice {
 			name: self.name.clone()
 		}
 	}
+
+	pub fn playback_latency(&self) -> u32 {
+		self.out_port.get_latency_range(jack::LatencyType::Playback).1
+	}
+
+	pub fn capture_latency(&self) -> u32 {
+		self.in_port.get_latency_range(jack::LatencyType::Capture).1
+	}
 }
 
 #[derive(Debug)]
@@ -104,6 +112,14 @@ impl AudioDevice {
 			name: name.into()
 		};
 		Ok(dev)
+	}
+
+	pub fn playback_latency(&self) -> u32 {
+		self.channels[0].out_port.get_latency_range(jack::LatencyType::Playback).1
+	}
+
+	pub fn capture_latency(&self) -> u32 {
+		self.channels[0].in_port.get_latency_range(jack::LatencyType::Capture).1
 	}
 }
 

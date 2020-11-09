@@ -76,7 +76,6 @@ impl AudioThreadState {
 	}
 
 	pub fn process_callback(&mut self, _client: &jack::Client, scope: &jack::ProcessScope) -> jack::Control {
-		use RecordState::*;
 		assert_no_alloc(||{
 			assert!(scope.n_frames() < self.song_length);
 
@@ -186,7 +185,7 @@ impl AudioThreadState {
 	fn process_audio_playback(&mut self, scope: &jack::ProcessScope) {
 		for dev in self.devices.iter_mut() {
 			if let Some(d) = dev {
-				play_silence(scope,d,0..scope.n_frames() as usize);
+				play_silence(scope,d,0..scope.n_frames());
 			}
 		}
 		
@@ -194,25 +193,22 @@ impl AudioThreadState {
 		while let Some(node) = cursor.get() {
 			let mut t = node.take.borrow_mut();
 			let dev = self.devices[t.audiodev_id].as_mut().unwrap();
-			// we assume that all channels have the same latencies.
-			let playback_latency = dev.channels[0].out_port.get_latency_range(jack::LatencyType::Playback).1;
 
-			let song_position = (self.song_position + self.song_length + playback_latency) % self.song_length;
-			let song_position_after = song_position + scope.n_frames();
-			let song_wraps = self.song_length <= song_position_after;
-			let song_wraps_at = min(self.song_length - song_position, scope.n_frames()) as usize;
+			let (song_wraps, song_wraps_at) = check_wrap(
+				self.song_position as i32 + dev.playback_latency() as i32,
+				self.song_length, scope.n_frames() );
 
 			if t.playing {
-				t.playback(scope,dev, 0..scope.n_frames() as usize);
+				t.playback(scope,dev, 0..scope.n_frames());
 				if song_wraps { println!("\n10/10 would rewind\n"); }
 			}
 			else if t.record_state == RecordState::Recording {
 				if song_wraps {
 					t.playing = true;
 					println!("\nAlmost finished recording on device {}, thus starting playback now", t.audiodev_id);
-					println!("Recording started at {}, now is {}", t.started_recording_at, self.transport_position + song_wraps_at as u32);
+					println!("Recording started at {}, now is {}", t.started_recording_at, self.transport_position + song_wraps_at);
 					t.rewind();
-					t.playback(scope,dev, song_wraps_at..scope.n_frames() as usize);
+					t.playback(scope,dev, song_wraps_at..scope.n_frames());
 				}
 			}
 
@@ -225,24 +221,22 @@ impl AudioThreadState {
 		while let Some(node) = cursor.get() {
 			let mut t = node.take.borrow_mut();
 			let dev = self.mididevices[t.mididev_id].as_mut().unwrap();
-			let playback_latency = dev.out_port.get_latency_range(jack::LatencyType::Playback).1;
 
-			let song_position = (self.song_position + self.song_length + playback_latency) % self.song_length;
-			let song_position_after = song_position + scope.n_frames();
-			let song_wraps = self.song_length <= song_position_after;
-			let song_wraps_at = min(self.song_length - song_position, scope.n_frames()) as usize;
-			
+			let (song_wraps, song_wraps_at) = check_wrap(
+				self.song_position as i32 + dev.playback_latency() as i32,
+				self.song_length, scope.n_frames() );
+
 			if t.playing {
-				t.playback(dev, 0..scope.n_frames() as usize);
+				t.playback(dev, 0..scope.n_frames());
 				if song_wraps { println!("\n10/10 would rewind\n"); }
 			}
 			else if t.record_state == RecordState::Recording {
 				if song_wraps {
 					t.playing = true;
 					println!("\nAlmost finished recording on midi device {}, thus starting playback now", t.mididev_id);
-					println!("Recording started at {}, now is {}", t.started_recording_at, self.transport_position + song_wraps_at as u32);
+					println!("Recording started at {}, now is {}", t.started_recording_at, self.transport_position + song_wraps_at);
 					t.rewind();
-					t.playback(dev, song_wraps_at..scope.n_frames() as usize);
+					t.playback(dev, song_wraps_at..scope.n_frames());
 				}
 			}
 
@@ -263,17 +257,13 @@ impl AudioThreadState {
 		while let Some(node) = cursor.get() {
 			let mut t = node.take.borrow_mut();
 			let dev = self.devices[t.audiodev_id].as_ref().unwrap();
-			// we assume that all channels have the same latencies.
-			let capture_latency = dev.channels[0].in_port.get_latency_range(jack::LatencyType::Capture).1;
-		
-			let song_position = (self.song_position + self.song_length - capture_latency) % self.song_length;
-			let song_position_after = song_position + scope.n_frames();
-			let song_wraps = self.song_length <= song_position_after;
-			let song_wraps_at = min(self.song_length - song_position, scope.n_frames());
-
 			
+			let (song_wraps, song_wraps_at) = check_wrap(
+				self.song_position as i32 - dev.capture_latency() as i32,
+				self.song_length, scope.n_frames() );
+
 			if t.record_state == Recording {
-				t.record(scope,dev, 0..song_wraps_at as usize);
+				t.record(scope,dev, 0..song_wraps_at);
 
 				if song_wraps {
 					println!("\nFinished recording on device {}", t.audiodev_id);
@@ -287,7 +277,7 @@ impl AudioThreadState {
 					self.event_channel.send_or_complain(Event::AudioTakeStateChanged(t.audiodev_id, t.id, RecordState::Recording));
 					t.record_state = Recording;
 					t.started_recording_at = self.transport_position + song_wraps_at;
-					t.record(scope, dev, song_wraps_at as usize ..scope.n_frames() as usize);
+					t.record(scope, dev, song_wraps_at..scope.n_frames());
 				}
 			}
 
@@ -301,17 +291,13 @@ impl AudioThreadState {
 		while let Some(node) = cursor.get() {
 			let mut t = node.take.borrow_mut();
 			let dev = self.mididevices[t.mididev_id].as_ref().unwrap();
-			// we assume that all channels have the same latencies.
-			let capture_latency = dev.in_port.get_latency_range(jack::LatencyType::Capture).1;
 		
-			let song_position = (self.song_position + self.song_length - capture_latency) % self.song_length;
-			let song_position_after = song_position + scope.n_frames();
-			let song_wraps = self.song_length <= song_position_after;
-			let song_wraps_at = min(self.song_length - song_position, scope.n_frames());
+			let (song_wraps, song_wraps_at) = check_wrap(
+				self.song_position as i32 - dev.capture_latency() as i32,
+				self.song_length, scope.n_frames() );
 
-			
 			if t.record_state == Recording {
-				t.record(scope,dev, 0..song_wraps_at as usize);
+				t.record(scope,dev, 0..song_wraps_at);
 
 				if song_wraps {
 					println!("\nFinished recording on device {}", t.mididev_id);
@@ -325,7 +311,7 @@ impl AudioThreadState {
 					self.event_channel.send_or_complain(Event::MidiTakeStateChanged(t.mididev_id, t.id, RecordState::Recording));
 					t.record_state = Recording;
 					t.started_recording_at = self.transport_position + song_wraps_at;
-					t.record(scope, dev, song_wraps_at as usize ..scope.n_frames() as usize);
+					t.record(scope, dev, song_wraps_at..scope.n_frames());
 				}
 			}
 
@@ -334,7 +320,8 @@ impl AudioThreadState {
 	}
 }
 
-fn play_silence(scope: &jack::ProcessScope, device: &mut AudioDevice, range: std::ops::Range<usize>) {
+fn play_silence(scope: &jack::ProcessScope, device: &mut AudioDevice, range_u32: std::ops::Range<u32>) {
+	let range = range_u32.start as usize .. range_u32.end as usize;
 	for channel_ports in device.channels.iter_mut() {
 		let buffer = &mut channel_ports.out_port.as_mut_slice(scope)[range.clone()];
 		for d in buffer {
@@ -350,3 +337,16 @@ fn pad_option_vec<T>(vec: Vec<T>, size: usize) -> Vec<Option<T>> {
 		.collect()
 }
 
+/** Given a audio chunk length of `n_frames`, returns whether and at which chunk sample position
+  * the song with length `song_length` will wrap around. */
+fn check_wrap(song_position: i32, song_length: u32, n_frames: u32) -> (bool, u32) {
+	let pos = modulo(song_position, song_length);
+	let wraps = pos + n_frames >= song_length;
+	let wraps_at = min(song_length - pos, n_frames);
+	return (wraps, wraps_at);
+}
+
+fn modulo(number: i32, modulo_u32: u32) -> u32 {
+	let modulo = modulo_u32 as i32;
+	(((number % modulo) + modulo) % modulo) as u32
+}

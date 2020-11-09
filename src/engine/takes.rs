@@ -39,7 +39,8 @@ impl std::fmt::Debug for AudioTake {
 }
 
 impl AudioTake {
-	pub fn playback(&mut self, scope: &jack::ProcessScope, device: &mut AudioDevice, range: std::ops::Range<usize>) {
+	pub fn playback(&mut self, scope: &jack::ProcessScope, device: &mut AudioDevice, range_u32: std::ops::Range<u32>) {
+		let range = range_u32.start as usize .. range_u32.end as usize;
 		for (channel_buffer, channel_ports) in self.samples.iter_mut().zip(device.channels.iter_mut()) {
 			let buffer = &mut channel_ports.out_port.as_mut_slice(scope)[range.clone()];
 			for d in buffer {
@@ -67,7 +68,8 @@ impl AudioTake {
 		}
 	}
 
-	pub fn record(&mut self, scope: &jack::ProcessScope, device: &AudioDevice, range: std::ops::Range<usize>) {
+	pub fn record(&mut self, scope: &jack::ProcessScope, device: &AudioDevice, range_u32: std::ops::Range<u32>) {
+		let range = range_u32.start as usize .. range_u32.end as usize;
 		for (channel_buffer, channel_ports) in self.samples.iter_mut().zip(device.channels.iter()) {
 			let data = &channel_ports.in_port.as_slice(scope)[range.clone()];
 			for d in data {
@@ -118,7 +120,8 @@ impl MidiTake {
 	/// Enumerates all events that take place in the next `range.len()` frames and puts
 	/// them into device's playback queue. The events are automatically looped every
 	/// `self.duration` frames.
-	pub fn playback(&mut self, device: &mut MidiDevice, range: std::ops::Range<usize>) {
+	pub fn playback(&mut self, device: &mut MidiDevice, range_u32: std::ops::Range<u32>) {
+		let range = range_u32.start as usize .. range_u32.end as usize;
 		if self.unmuted != self.unmuted_old {
 			if !self.unmuted {
 				self.note_registry.borrow_mut().stop_playing(device);
@@ -187,8 +190,9 @@ impl MidiTake {
 		self.events.rewind();
 	}
 
-	pub fn record(&mut self, scope: &jack::ProcessScope, device: &MidiDevice, range: std::ops::Range<usize>) {
+	pub fn record(&mut self, scope: &jack::ProcessScope, device: &MidiDevice, range_u32: std::ops::Range<u32>) {
 		use std::convert::TryInto;
+		let range = range_u32.start as usize .. range_u32.end as usize;
 		for event in device.in_port.iter(scope) {
 			if range.contains(&(event.time as usize)) {
 				if event.bytes.len() != 3 {
