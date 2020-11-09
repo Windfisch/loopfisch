@@ -3,7 +3,7 @@ use std::time::Duration;
 use rocket::State;
 use rocket_contrib::json::Json;
 use super::gui_state::GuiState;
-use super::data::{Synth,Chain,Take};
+use super::data::{Synth,Chain,Take,RecordingState};
 
 #[derive(Serialize, Clone)]
 pub struct Update {
@@ -43,6 +43,8 @@ pub struct UpdateTake {
 	pub id: u32,
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub name: Option<String>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub state: Option<RecordingState>,
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub muted: Option<bool>,
 	#[serde(skip_serializing_if = "Option::is_none")]
@@ -86,6 +88,7 @@ pub fn make_update_take(take: &Take, synthid: u32, chainid: u32) -> UpdateRoot {
 				takes: Some(vec![UpdateTake {
 					id: take.id,
 					name: Some(take.name.clone()),
+					state: Some(take.state.clone()),
 					muted: Some(take.muted),
 					muted_scheduled: Some(take.muted_scheduled),
 					associated_midi_takes: Some(take.associated_midi_takes.clone()),
@@ -132,6 +135,6 @@ impl UpdateList {
 }
 
 #[get("/updates?<since>&<seconds>")]
-pub async fn updates(state: State<'_, GuiState>, since: u64, seconds: u64) -> Json<Vec<Update>> {
+pub async fn updates(state: State<'_, std::sync::Arc<GuiState>>, since: u64, seconds: u64) -> Json<Vec<Update>> {
 	Json(state.update_list.poll(Duration::from_secs(seconds), since).await)
 }

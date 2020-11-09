@@ -52,7 +52,7 @@ fn not_found(req: &rocket::Request) -> String {
 
 pub async fn launch_server(engine: FrontendThreadState, event_channel_: realtime_send_queue::Consumer<Event>) {
 	let update_list = Arc::new(UpdateList::new());
-	let state = GuiState {
+	let state = Arc::new( GuiState {
 		update_list: update_list.clone(),
 		mutex: Mutex::new( GuiMutexedState {
 			engine,
@@ -75,9 +75,10 @@ pub async fn launch_server(engine: FrontendThreadState, event_channel_: realtime
 			chain_id: IdGenerator::new(),
 			synth_id: IdGenerator::new()
 		})
-	};
+	} );
 
 	let mut event_channel = event_channel_;
+	let state2 = state.clone();
 	tokio::task::spawn( async move {
 		loop {
 			match event_channel.receive().await
@@ -85,10 +86,26 @@ pub async fn launch_server(engine: FrontendThreadState, event_channel_: realtime
 				Event::AudioTakeStateChanged(dev_id, take_id, new_state) =>
 				{
 					println!("\n\n\n############# audio state {:?}\n\n\n", new_state);
+					let mut guard = state2.mutex.lock().await;
+					if let Some((synthid, chainid, mut take)) = guard.find_audiotake_by_engine_id(dev_id, take_id) {
+						take.state = new_state.into();
+						state2.update_list.push( make_update_take(&take, synthid, chainid) ).await;
+					}
+					else {
+						panic!();
+					}
 				}
 				Event::MidiTakeStateChanged(mididev_id, take_id, new_state) =>
 				{
 					println!("\n\n\n############# midi state {:?}\n\n\n", new_state);
+					let mut guard = state2.mutex.lock().await;
+					if let Some((synthid, chainid, mut take)) = guard.find_miditake_by_engine_id(mididev_id, take_id) {
+						take.state = new_state.into();
+						state2.update_list.push( make_update_take(&take, synthid, chainid) ).await;
+					}
+					else {
+						panic!();
+					}
 				}
 				Event::Kill =>
 				{

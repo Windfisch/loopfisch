@@ -22,7 +22,7 @@ pub struct SynthPost {
 }
 
 #[post("/synths", data="<data>")]
-pub async fn post_synth(state: State<'_, GuiState>, data: Json<SynthPost>) -> Result<rocket::response::status::Created<()>, Status> {
+pub async fn post_synth(state: State<'_, std::sync::Arc<GuiState>>, data: Json<SynthPost>) -> Result<rocket::response::status::Created<()>, Status> {
 	let mut guard_ = state.mutex.lock().await;
 	let guard = &mut *guard_;
 	let id = guard.synth_id.gen();
@@ -47,7 +47,7 @@ pub async fn post_synth(state: State<'_, GuiState>, data: Json<SynthPost>) -> Re
 }
 
 #[post("/synths/<synthid>/chains", data="<data>")]
-pub async fn post_chain(state: State<'_, GuiState>, synthid: u32, data: Json<ChainPost>) -> Result<rocket::response::status::Created<()>, Status> {
+pub async fn post_chain(state: State<'_, std::sync::Arc<GuiState>>, synthid: u32, data: Json<ChainPost>) -> Result<rocket::response::status::Created<()>, Status> {
 	let mut guard_ = state.mutex.lock().await;
 	let guard = &mut *guard_;
 	if let Some(synth) = guard.synths.iter_mut().find(|s| s.id == synthid) {
@@ -74,7 +74,7 @@ pub async fn post_chain(state: State<'_, GuiState>, synthid: u32, data: Json<Cha
 }
 
 #[post("/synths/<synthid>/chains/<chainid>/takes", data="<data>")]
-pub async fn post_take(state: State<'_, GuiState>, synthid: u32, chainid: u32, data: Json<TakePost>) -> Result<(), Status> {
+pub async fn post_take(state: State<'_, std::sync::Arc<GuiState>>, synthid: u32, chainid: u32, data: Json<TakePost>) -> Result<(), Status> {
 	let mut guard_ = state.mutex.lock().await;
 	let guard = &mut *guard_;
 	if let Some(synth) = guard.synths.iter_mut().find(|s| s.id == synthid) {

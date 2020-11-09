@@ -11,7 +11,7 @@ mod midi_registry;
 
 use backend::*;
 
-pub use data::Event;
+pub use data::{Event, RecordState};
 
 use shared::SharedThreadState;
 

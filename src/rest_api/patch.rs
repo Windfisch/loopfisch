@@ -30,7 +30,7 @@ pub struct TakePatch {
 
 
 #[patch("/synths", data="<patch>")]
-pub async fn patch_synths(state: State<'_, GuiState>, patch: Json<Vec<SynthPatch>>) -> Result<(), Status> {
+pub async fn patch_synths(state: State<'_, std::sync::Arc<GuiState>>, patch: Json<Vec<SynthPatch>>) -> Result<(), Status> {
 	let mut guard = state.mutex.lock().await;
 	patch_synths_(&mut guard.synths, &*patch, true)?;
 	patch_synths_(&mut guard.synths, &*patch, false).unwrap();
@@ -41,7 +41,7 @@ pub async fn patch_synths(state: State<'_, GuiState>, patch: Json<Vec<SynthPatch
 }
 
 #[patch("/synths/<id>", data="<patch>")]
-pub async fn patch_synth(state: State<'_, GuiState>, id: u32, patch: Json<SynthPatch>) -> Result<(), Status> {
+pub async fn patch_synth(state: State<'_, std::sync::Arc<GuiState>>, id: u32, patch: Json<SynthPatch>) -> Result<(), Status> {
 	if id != patch.id {
 		return Err(Status::UnprocessableEntity); //422
 	}
@@ -53,7 +53,7 @@ pub async fn patch_synth(state: State<'_, GuiState>, id: u32, patch: Json<SynthP
 }
 
 #[patch("/synths/<synthid>/chains", data="<patch>")]
-pub async fn patch_chains(state: State<'_, GuiState>, synthid: u32, patch: Json<Vec<ChainPatch>>) -> Result<(), Status> {
+pub async fn patch_chains(state: State<'_, std::sync::Arc<GuiState>>, synthid: u32, patch: Json<Vec<ChainPatch>>) -> Result<(), Status> {
 	let mut guard = state.mutex.lock().await;
 	if let Some(synth) = guard.synths.iter_mut().find(|s| s.id == synthid) {
 		patch_chains_(&mut synth.chains, &*patch, true)?;
@@ -67,7 +67,7 @@ pub async fn patch_chains(state: State<'_, GuiState>, synthid: u32, patch: Json<
 }
 
 #[patch("/synths/<synthid>/chains/<chainid>", data="<patch>")]
-pub async fn patch_chain(state: State<'_, GuiState>, synthid: u32, chainid: u32, patch: Json<ChainPatch>) -> Result<(), Status> {
+pub async fn patch_chain(state: State<'_, std::sync::Arc<GuiState>>, synthid: u32, chainid: u32, patch: Json<ChainPatch>) -> Result<(), Status> {
 	let mut guard = state.mutex.lock().await;
 	if let Some(synth) = guard.synths.iter_mut().find(|s| s.id == synthid) {
 		if chainid != patch.id {
@@ -82,7 +82,7 @@ pub async fn patch_chain(state: State<'_, GuiState>, synthid: u32, chainid: u32,
 }
 
 #[patch("/synths/<synthid>/chains/<chainid>/takes", data="<patch>")]
-pub async fn patch_takes(state: State<'_, GuiState>, synthid: u32, chainid: u32, patch: Json<Vec<TakePatch>>) -> Result<(), Status> {
+pub async fn patch_takes(state: State<'_, std::sync::Arc<GuiState>>, synthid: u32, chainid: u32, patch: Json<Vec<TakePatch>>) -> Result<(), Status> {
 	let mut guard = state.mutex.lock().await;
 	if let Some(synth) = guard.synths.iter_mut().find(|s| s.id == synthid) {
 		if let Some(chain) = synth.chains.iter_mut().find(|c| c.id == chainid) {
@@ -98,7 +98,7 @@ pub async fn patch_takes(state: State<'_, GuiState>, synthid: u32, chainid: u32,
 }
 
 #[patch("/synths/<synthid>/chains/<chainid>/takes/<takeid>", data="<patch>")]
-pub async fn patch_take(state: State<'_, GuiState>, synthid: u32, chainid: u32, takeid: u32, patch: Json<TakePatch>) -> Result<(), Status> {
+pub async fn patch_take(state: State<'_, std::sync::Arc<GuiState>>, synthid: u32, chainid: u32, takeid: u32, patch: Json<TakePatch>) -> Result<(), Status> {
 	let mut guard = state.mutex.lock().await;
 	if let Some(synth) = guard.synths.iter_mut().find(|s| s.id == synthid) {
 		if let Some(chain) = synth.chains.iter_mut().find(|s| s.id == chainid) {

@@ -28,7 +28,18 @@ pub enum RecordingState {
 	Finished
 }
 
-#[derive(Clone)]
+impl From<crate::engine::RecordState> for RecordingState {
+	fn from(record_state: crate::engine::RecordState) -> Self {
+		use crate::engine;
+		match record_state {
+			engine::RecordState::Waiting => RecordingState::Waiting,
+			engine::RecordState::Recording => RecordingState::Recording,
+			engine::RecordState::Finished => RecordingState::Finished,
+		}
+	}
+}
+
+#[derive(Clone, PartialEq)]
 pub enum EngineTakeRef {
 	Audio(u32),
 	Midi(u32)
