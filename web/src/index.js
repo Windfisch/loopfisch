@@ -284,7 +284,7 @@ function apply_patch(patch) {
 				"chains",
 				["name"],
 				[
-					["takes", ["name", "muted", "muted_scheduled"], []]
+					["takes", ["name", "type", "state", "associated_midi_takes", "muted", "muted_scheduled"], []]
 				]
 			]
 		]

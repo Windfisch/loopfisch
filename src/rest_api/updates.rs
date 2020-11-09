@@ -3,7 +3,7 @@ use std::time::Duration;
 use rocket::State;
 use rocket_contrib::json::Json;
 use super::gui_state::GuiState;
-use super::data::{Synth,Chain,Take,RecordingState};
+use super::data::{Synth,Chain,Take,RecordingState,EngineTakeRef};
 
 #[derive(Serialize, Clone)]
 pub struct Update {
@@ -43,6 +43,8 @@ pub struct UpdateTake {
 	pub id: u32,
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub name: Option<String>,
+	#[serde(rename="type", skip_serializing_if = "Option::is_none")]
+	pub engine_take_id: Option<EngineTakeRef>,
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub state: Option<RecordingState>,
 	#[serde(skip_serializing_if = "Option::is_none")]
@@ -88,6 +90,7 @@ pub fn make_update_take(take: &Take, synthid: u32, chainid: u32) -> UpdateRoot {
 				takes: Some(vec![UpdateTake {
 					id: take.id,
 					name: Some(take.name.clone()),
+					engine_take_id: Some(take.engine_take_id.clone()),
 					state: Some(take.state.clone()),
 					muted: Some(take.muted),
 					muted_scheduled: Some(take.muted_scheduled),

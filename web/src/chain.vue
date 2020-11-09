@@ -61,8 +61,8 @@ module.exports = {
 			</div>
 
 	
-			<div v-for="take in takes" v-bind:style="'overflow: hidden; margin-right: -0.5em; padding: 0; transition: max-height 125ms ease-out;' + ((show_midi || take.audio) ? 'max-height:2.5em' : 'max-height:0')">
-			<take v-bind:reference="take" v-on:toggle_audio="toggle_audio" v-on:toggle_midi="toggle_midi" v-bind:name="take.name" v-bind:audio="take.audio" v-bind:midi="take.midi" v-bind:audiomute="take.audiomute" v-bind:midimute="take.midimute" play_audio="1"></take>
+			<div v-for="take in takes" v-bind:style="'overflow: hidden; margin-right: -0.5em; padding: 0; transition: max-height 125ms ease-out;' + ((show_midi || take.type==='Audio') ? 'max-height:2.5em' : 'max-height:0')">
+			<take v-bind:reference="take" v-on:toggle_audio="toggle_audio" v-on:toggle_midi="toggle_midi" v-bind:name="take.name" v-bind:audio="take.type==='Audio'" v-bind:midi="true" v-bind:audiomute="take.audiomute" v-bind:midimute="take.midimute" play_audio="1"></take>
 			</div>
 		</div>
 </template>
