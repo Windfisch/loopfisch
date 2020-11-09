@@ -17,7 +17,6 @@ use shared::SharedThreadState;
 
 use messages::*;
 pub use frontend::FrontendThreadState;
-use frontend::*;
 use retry_channel::*;
 
 use std::sync::atomic::*;
@@ -38,8 +37,8 @@ pub fn create_thread_states(client: jack::Client, devices: Vec<AudioDevice>, mid
 
 	let (command_sender, command_receiver) = ringbuf::RingBuffer::<Message>::new(16).split();
 
-	let frontend_devices = devices.iter().enumerate().map(|d| (d.0, GuiAudioDevice { info: d.1.info(), takes: Vec::new() }) ).collect();
-	let frontend_mididevices = mididevices.iter().enumerate().map(|d| (d.0, GuiMidiDevice { info: d.1.info(), takes: Vec::new() }) ).collect();
+	let frontend_devices = devices.iter().enumerate().map(|d| (d.0, frontend::GuiAudioDevice { info: d.1.info(), takes: Vec::new() }) ).collect();
+	let frontend_mididevices = mididevices.iter().enumerate().map(|d| (d.0, frontend::GuiMidiDevice { info: d.1.info(), takes: Vec::new() }) ).collect();
 
 	let (event_producer, event_consumer) = realtime_send_queue::new(64);
 

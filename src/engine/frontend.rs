@@ -1,7 +1,7 @@
 use super::shared::SharedThreadState;
 use super::data::RecordState;
 use super::takes::{MidiTake,MidiTakeNode,AudioTake,AudioTakeNode};
-use super::retry_channel::*;
+use super::retry_channel::RetryChannelPush;
 use super::messages::Message;
 use std::sync::Arc;
 use std::cell::RefCell;
