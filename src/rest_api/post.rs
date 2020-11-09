@@ -104,6 +104,7 @@ pub async fn post_take(state: State<'_, GuiState>, synthid: u32, chainid: u32, d
 				state: RecordingState::Waiting,
 				associated_midi_takes
 			});
+			state.update_list.push(make_update_take(chain.takes.last().unwrap(), synthid, chainid)).await;
 			chain.takes.push( Take {
 				id: midi_id,
 				engine_take_id: EngineTakeRef::Midi(engine_miditake_id),
@@ -113,6 +114,7 @@ pub async fn post_take(state: State<'_, GuiState>, synthid: u32, chainid: u32, d
 				state: RecordingState::Waiting,
 				associated_midi_takes: Vec::new()
 			});
+			state.update_list.push(make_update_take(chain.takes.last().unwrap(), synthid, chainid)).await;
 			return Ok(());
 		}
 	}

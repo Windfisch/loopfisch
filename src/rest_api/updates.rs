@@ -16,7 +16,7 @@ pub struct UpdateRoot {
 	pub synths: Vec<UpdateSynth>
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Default)]
 pub struct UpdateSynth {
 	pub id: u32,
 	#[serde(skip_serializing_if = "Option::is_none")]
@@ -27,7 +27,7 @@ pub struct UpdateSynth {
 	pub deleted: Option<bool>
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Default)]
 pub struct UpdateChain {
 	pub id: u32,
 	#[serde(skip_serializing_if = "Option::is_none")]
@@ -38,7 +38,7 @@ pub struct UpdateChain {
 	pub deleted: Option<bool>
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Default)]
 pub struct UpdateTake {
 	pub id: u32,
 	#[serde(skip_serializing_if = "Option::is_none")]
@@ -58,8 +58,7 @@ pub fn make_update_synth(synth: &Synth) -> UpdateRoot {
 		synths: vec![UpdateSynth {
 			id: synth.id,
 			name: Some(synth.name.clone()),
-			chains: None,
-			deleted: None
+			..Default::default()
 		}]
 	}
 }
@@ -68,18 +67,36 @@ pub fn make_update_chain(chain: &Chain, synthid: u32) -> UpdateRoot {
 	UpdateRoot {
 		synths: vec![UpdateSynth {
 			id: synthid,
-			name: None,
-			deleted: None,
 			chains: Some(vec![UpdateChain {
 				id: chain.id,
 				name: Some(chain.name.clone()),
-				takes: None,
-				deleted: None
-			}])
+				..Default::default()
+			}]),
+			..Default::default()
 		}]
 	}
 }
 
+pub fn make_update_take(take: &Take, synthid: u32, chainid: u32) -> UpdateRoot {
+	UpdateRoot {
+		synths: vec![UpdateSynth {
+			id: synthid,
+			chains: Some(vec![UpdateChain {
+				id: chainid,
+				takes: Some(vec![UpdateTake {
+					id: take.id,
+					name: Some(take.name.clone()),
+					muted: Some(take.muted),
+					muted_scheduled: Some(take.muted_scheduled),
+					associated_midi_takes: Some(take.associated_midi_takes.clone()),
+					..Default::default()
+				}]),
+				..Default::default()
+			}]),
+			..Default::default()
+		}]
+	}
+}
 
 pub struct UpdateList {
 	condvar: async_std::sync::Condvar,
