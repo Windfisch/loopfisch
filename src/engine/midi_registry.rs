@@ -1,6 +1,6 @@
 use crate::bit_array::BitArray2048;
 use crate::midi_message::*;
-use crate::jack_driver::MidiDevice;
+use super::jack_driver::MidiDevice;
 
 pub struct MidiNoteRegistry {
 	playing_notes: BitArray2048

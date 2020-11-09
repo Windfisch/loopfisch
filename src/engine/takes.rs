@@ -5,9 +5,9 @@ use std::cell::RefCell;
 
 use crate::midi_message::MidiMessage;
 
-use crate::jack_driver::*;
+use super::jack_driver::*;
 
-use crate::midi_registry::MidiNoteRegistry;
+use super::midi_registry::MidiNoteRegistry;
 
 use crate::outsourced_allocation_buffer::Buffer;
 

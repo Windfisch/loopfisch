@@ -7,8 +7,8 @@ use std::sync::Arc;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use crate::id_generator::IdGenerator;
-use crate::jack_driver::*;
-use crate::midi_registry::MidiNoteRegistry;
+use super::jack_driver::*;
+use super::midi_registry::MidiNoteRegistry;
 use crate::outsourced_allocation_buffer::Buffer;
 
 pub struct GuiAudioTake {

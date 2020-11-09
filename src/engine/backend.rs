@@ -7,9 +7,9 @@ use super::messages::*;
 use core::cmp::min;
 use intrusive_collections::LinkedList;
 use std::sync::Arc;
-use crate::jack_driver::*;
+use super::jack_driver::*;
 
-use crate::metronome::AudioMetronome;
+use super::metronome::AudioMetronome;
 
 
 use assert_no_alloc::assert_no_alloc;

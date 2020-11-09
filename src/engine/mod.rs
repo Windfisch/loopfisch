@@ -5,9 +5,11 @@ mod takes;
 mod data;
 mod shared;
 mod backend;
+mod jack_driver;
+mod metronome;
+mod midi_registry;
 
 use backend::*;
-use takes::{AudioTakeAdapter,MidiTakeAdapter};
 
 pub use data::Event;
 
@@ -18,14 +20,13 @@ pub use frontend::FrontendThreadState;
 use frontend::*;
 use retry_channel::*;
 
-use intrusive_collections::LinkedList;
 use std::sync::atomic::*;
 use std::sync::Arc;
 use crate::id_generator::IdGenerator;
 
-use crate::jack_driver::*;
+use jack_driver::*;
 
-use crate::metronome::AudioMetronome;
+use metronome::AudioMetronome;
 use crate::realtime_send_queue;
 
 pub fn create_thread_states(client: jack::Client, devices: Vec<AudioDevice>, mididevices: Vec<MidiDevice>, metronome: AudioMetronome, song_length: u32) -> (FrontendThreadState, realtime_send_queue::Consumer<Event>) {

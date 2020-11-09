@@ -16,11 +16,8 @@
 #![feature(proc_macro_hygiene)]
 
 mod engine;
-mod metronome;
-mod jack_driver;
 mod midi_message;
 mod bit_array;
-mod midi_registry;
 mod outsourced_allocation_buffer;
 mod id_generator;
 mod rest_api;
