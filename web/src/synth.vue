@@ -46,7 +46,7 @@ module.exports = {
 			<button v-on:click="add_chain_clicked">Add chain</button>
 		</div>
 		<div>
-			<chain v-for="chain in chains" v-bind:name="chain.name" v-bind:takes="chain.takes" />
+			<chain v-for="chain in chains" v-bind:midi="chain.midi" v-bind:name="chain.name" v-bind:takes="chain.takes" />
 		</div>
 	</div>
 </template>

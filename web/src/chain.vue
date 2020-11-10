@@ -1,12 +1,18 @@
 <script>
 module.exports = {
-	props: ['name', 'takes'],
+	props: ['name', 'takes', 'midi'],
 	methods: {
-		has_midi_takes() {
-			return this.takes.filter(t => t.midi == true).length > 0;
+		record_audio() {
+
+		},
+		record_midi() {
+
 		},
 		has_audio_takes() {
-			return this.takes.filter(t => t.audio == true).length > 0;
+			return this.takes.filter(t => t.type === "Audio").length > 0;
+		},
+		has_midi_takes() {
+			return this.midi;
 		},
 		needs_show_midi_button() {
 			return this.has_midi_takes() && this.has_audio_takes()
@@ -56,13 +62,13 @@ module.exports = {
 				<h1>{{name}}</h1>
 				<div style="flex-grow: 2"></div>
 				<button v-if="needs_show_midi_button()" v-on:click="showhidemidi">{{ show_midi ? 'hide midi' : 'show midi' }}</button>
-				<div class="circle" style="background-color: blue"></div>
-				<div class="circle"></div>
+				<button v-on:click="record_audio">rec audio</button>
+				<button v-on:click="record_midi">rec midi</button>
 			</div>
 
 	
 			<div v-for="take in takes" v-bind:style="'overflow: hidden; margin-right: -0.5em; padding: 0; transition: max-height 125ms ease-out;' + ((show_midi || take.type==='Audio') ? 'max-height:2.5em' : 'max-height:0')">
-			<take v-bind:reference="take" v-on:toggle_audio="toggle_audio" v-on:toggle_midi="toggle_midi" v-bind:name="take.name" v-bind:audio="take.type==='Audio'" v-bind:midi="true" v-bind:audiomute="take.audiomute" v-bind:midimute="take.midimute" play_audio="1"></take>
+			<take v-bind:reference="take" v-on:toggle_audio="toggle_audio" v-on:toggle_midi="toggle_midi" v-bind:name="take.name" v-bind:audio="take.type==='Audio'" v-bind:midi="midi" v-bind:audiomute="take.audiomute" v-bind:midimute="take.midimute" play_audio="1"></take>
 			</div>
 		</div>
 </template>

@@ -23,12 +23,12 @@ var app2 = new Vue({
 				chains: [
 					{
 						name: "Pad",
+						midi: true,
 						takes: [
 							{
 								id: 0,
 								name: "Flausch",
-								audio: true,
-								midi: true,
+								type: "Audio",
 								audiomute: true,
 								midimute: true,
 								associated_midi_takes: [1]
@@ -36,8 +36,7 @@ var app2 = new Vue({
 							{
 								id: 3,
 								name: "gefiltertes Flausch",
-								audio: true,
-								midi: true,
+								type: "Audio",
 								audiomute: false,
 								midimute: true,
 								associated_midi_takes: [1,2]
@@ -45,16 +44,14 @@ var app2 = new Vue({
 							{
 								id: 1,
 								name: "Flausch (MIDI)",
-								audio: false,
-								midi: true,
+								type: "Midi",
 								audiomute: false,
 								midimute: true
 							},
 							{
 								id: 2,
 								name: "Filter controller",
-								audio: false,
-								midi: true,
+								type: "Midi",
 								audiomute: false,
 								midimute: true
 							},
@@ -62,12 +59,12 @@ var app2 = new Vue({
 					},
 					{
 						name: "Lead",
+						midi: true,
 						takes: [
 							{
 								id: 0,
 								name: "Lead",
-								audio: true,
-								midi: true,
+								type: "Audio",
 								audiomute: true,
 								midimute: true
 							}
@@ -75,12 +72,12 @@ var app2 = new Vue({
 					},
 					{
 						name: "Bass",
+						midi: true,
 						takes: [
 							{
 								id: 0,
 								name: "Intro",
-								audio: true,
-								midi: true,
+								type: "Audio",
 								audiomute: true,
 								midimute: true,
 								associated_midi_takes: [2,3]
@@ -88,8 +85,7 @@ var app2 = new Vue({
 							{
 								id: 1,
 								name: "Main line",
-								audio: true,
-								midi: true,
+								type: "Audio",
 								audiomute: false,
 								midimute: true,
 								associated_midi_takes: [3,4,5]
@@ -97,32 +93,28 @@ var app2 = new Vue({
 							{
 								id: 2,
 								name: "Intro (MIDI)",
-								audio: false,
-								midi: true,
+								type: "Midi",
 								audiomute: false,
 								midimute: true
 							},
 							{
 								id: 3,
 								name: "Filter",
-								audio: false,
-								midi: true,
+								type: "Midi",
 								audiomute: false,
 								midimute: true
 							},
 							{
 								id: 4,
 								name: "Main line (MIDI)",
-								audio: false,
-								midi: true,
+								type: "Midi",
 								audiomute: false,
 								midimute: true
 							},
 							{
 								id: 5,
 								name: "Envelope decay",
-								audio: false,
-								midi: true,
+								type: "Midi",
 								audiomute: false,
 								midimute: true
 							},
@@ -135,12 +127,12 @@ var app2 = new Vue({
 				chains: [
 					{
 						name: "Something",
+						midi: true,
 						takes: [
 							{
 								id: 0,
 								name: "Some take",
-								audio: false,
-								midi: true,
+								type: "Midi",
 								audiomute: false,
 								midimute: true,
 								associated_midi_takes: []
@@ -154,12 +146,12 @@ var app2 = new Vue({
 				chains: [
 					{
 						name: "Distorted",
+						midi: false,
 						takes: [
 							{
 								id: 0,
 								name: "Rhythm Djents",
-								audio: true,
-								midi: false,
+								type: "Audio",
 								audiomute: false,
 								midimute: true,
 								associated_midi_takes: []
@@ -167,8 +159,7 @@ var app2 = new Vue({
 							{
 								id: 1,
 								name: "Rhythm Djents 2",
-								audio: true,
-								midi: false,
+								type: "Audio",
 								audiomute: false,
 								midimute: true,
 								associated_midi_takes: []
@@ -177,12 +168,12 @@ var app2 = new Vue({
 					},
 					{
 						name: "Clean",
+						midi: false,
 						takes: [
 							{
 								id: 0,
 								name: "Solo",
-								audio: true,
-								midi: false,
+								type: "Audio",
 								audiomute: false,
 								midimute: true,
 								associated_midi_takes: []
