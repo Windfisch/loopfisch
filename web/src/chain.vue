@@ -1,12 +1,46 @@
 <script>
 module.exports = {
-	props: ['name', 'takes', 'midi'],
+	props: ['name', 'takes', 'midi', 'id', 'synthid', 'model'],
 	methods: {
-		record_audio() {
-
+		async record_audio() {
+			await this.new_take("Audio");
 		},
-		record_midi() {
+		async new_take(type) {
+			var post = await fetch(
+				"http://localhost:8000/api/synths/" + this.synthid
+				+ "/chains/" + this.id + "/takes", {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				redirect: 'follow',
+				mode: 'cors',
+				body: JSON.stringify({
+					"name": "New Take",
+					"type": type
+				})
+			});
+			if (post.status == 201) {
+				path = post.headers.get('Location');
+				console.log(path);
 
+				var response = await fetch("http://localhost:8000"+path);
+				if (response.status !== 200) {
+					console.log("whoopsie :o");
+					return;
+				}
+
+				json = await response.json();
+				console.log(json);
+				if (this.model.takes.find(x => x.id === json.id) === undefined) {
+					this.model.takes.push(json);
+				}
+				console.log(this.model);
+			}
+			else {
+				alert("Failed to create take!");
+			}
+		},
+		async record_midi() {
+			await this.new_take("Midi");
 		},
 		has_audio_takes() {
 			return this.takes.filter(t => t.type === "Audio").length > 0;
