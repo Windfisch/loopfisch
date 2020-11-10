@@ -69,23 +69,10 @@ pub fn launch() -> (FrontendThreadState, realtime_send_queue::Consumer<Event>) {
 
 	println!("JACK running with sampling rate {} Hz, buffer size = {} samples", client.sample_rate(), client.buffer_size());
 
-	let audiodev = AudioDevice::new(&client, 2, "fnord").unwrap();
-	let audiodev2 = AudioDevice::new(&client, 2, "dronf").unwrap();
-	let mididev = MidiDevice::new(&client, "midi").unwrap();
-	let mididev2 = MidiDevice::new(&client, "midi2").unwrap();
-	let devices = vec![audiodev, audiodev2];
-	let mididevs = vec![mididev, mididev2];
-
 	let metronome = AudioMetronome::new(&client).unwrap();
 
 	let loop_length = client.sample_rate() as u32 * 4;
-	let (frontend_thread_state, event_queue) = create_thread_states(client, devices, mididevs, metronome, loop_length);
-
-
-	frontend_thread_state.async_client.as_client().connect_ports_by_name("loopfisch:fnord_out1", "system:playback_1").unwrap();
-	frontend_thread_state.async_client.as_client().connect_ports_by_name("loopfisch:fnord_out2", "system:playback_2").unwrap();
-	frontend_thread_state.async_client.as_client().connect_ports_by_name("system:capture_1", "loopfisch:fnord_in1").unwrap();
-	frontend_thread_state.async_client.as_client().connect_ports_by_name("system:capture_2", "loopfisch:fnord_in2").unwrap();
+	let (frontend_thread_state, event_queue) = create_thread_states(client, vec![], vec![], metronome, loop_length);
 
 	return (frontend_thread_state, event_queue);
 }

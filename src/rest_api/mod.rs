@@ -56,21 +56,7 @@ pub async fn launch_server(engine: FrontendThreadState, event_channel_: realtime
 		update_list: update_list.clone(),
 		mutex: Mutex::new( GuiMutexedState {
 			engine,
-			synths: vec![
-				Synth {
-					id: 0,
-					name: "DeepMind 13".into(),
-					engine_mididevice_id: 1337, // FIXME
-					chains: vec![
-						Chain {
-							id: 0,
-							name: "Pad".into(),
-							takes: vec![],
-							engine_audiodevice_id: 1337, // FIXME
-						}
-					]
-				}
-			],
+			synths: vec![],
 			take_id: IdGenerator::new(),
 			chain_id: IdGenerator::new(),
 			synth_id: IdGenerator::new()
