@@ -16,6 +16,7 @@ pub struct Chain {
 	pub id: u32,
 	pub name: String,
 	pub takes: Vec<Take>,
+	pub midi: bool,
 
 	#[serde(skip)]
 	pub engine_audiodevice_id: usize

@@ -1,6 +1,24 @@
 <script>
 module.exports = {
-	props: ['name', 'audio', 'midi', 'audiomute', 'midimute', 'play_audio', 'play_progress', 'play_blinking', 'reference' ],
+	props: ['name', 'audio', 'midi', 'play_audio', 'play_progress', 'play_blinking', 'reference' ],
+	computed: {
+		midimute: function() {
+			if (this.reference.type == "Audio") {
+				var result = true;
+				for (var id of this.reference.associated_midi_takes) {
+					var miditake = this.$parent.model.takes.find(t => t.id == id);
+					result = result && miditake.muted;
+				}
+				return result;
+			}
+			else {
+				return this.reference.muted;
+			}
+		},
+		audiomute: function() {
+			return this.reference.muted;
+		}
+	},
 	methods: {
 		toggle_audio: function(event) {
 			this.$emit('toggle_audio', this.reference);

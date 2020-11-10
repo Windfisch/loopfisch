@@ -55,30 +55,31 @@ module.exports = {
 			this.show_midi = !this.show_midi;
 		},
 		toggle_audio: function(take) {
-			take.audiomute = !take.audiomute;
+			take.muted = !take.muted;
 
-			if (!take.audiomute && !take.midimute)
-			{
-				take.midimute = true;
-				this.update_associated_midi_takes(take);
+			if (!take.audiomute && !take.midimute) {
+				this.update_associated_midi_takes(take, true);
 			}
 		},
 		toggle_midi: function(take) {
-			take.midimute = !take.midimute;
-
-			this.update_associated_midi_takes(take);
-			
-			if (!take.audiomute && !take.midimute)
-			{
-				take.audiomute = true;
+			if (take.type == "Audio") {
+				console.log(take.midimute);
+				this.update_associated_midi_takes(take, !take.midimute);
+				if (!take.audiomute && !take.midimute) {
+					take.muted = true;
+				}
 			}
+			else {
+				take.muted = !take.muted;
+			}
+
 		},
-		update_associated_midi_takes: function(take) {
+		update_associated_midi_takes: function(take, value) {
 			console.log(this);
 			for (var id of take.associated_midi_takes) {
 				var miditake = this.takes.find(t => t.id == id);
 				console.log(miditake);
-				miditake.midimute = take.midimute;
+				miditake.muted = value;
 			}
 		}
 	},

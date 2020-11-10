@@ -59,6 +59,7 @@ pub async fn post_chain(state: State<'_, std::sync::Arc<GuiState>>, synthid: u32
 				id,
 				takes: Vec::new(),
 				name,
+				midi: true, // FIXME this should not be hard-coded
 				engine_audiodevice_id
 			};
 			state.update_list.push(make_update_chain(&new_chain, synthid)).await;

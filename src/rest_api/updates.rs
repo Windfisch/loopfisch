@@ -33,6 +33,8 @@ pub struct UpdateChain {
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub name: Option<String>,
 	#[serde(skip_serializing_if = "Option::is_none")]
+	pub midi: Option<bool>,
+	#[serde(skip_serializing_if = "Option::is_none")]
 	pub takes: Option<Vec<UpdateTake>>,
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub deleted: Option<bool>
@@ -74,6 +76,7 @@ pub fn make_update_chain(chain: &Chain, synthid: u32) -> UpdateRoot {
 			chains: Some(vec![UpdateChain {
 				id: chain.id,
 				name: Some(chain.name.clone()),
+				midi: Some(chain.midi),
 				..Default::default()
 			}]),
 			..Default::default()
