@@ -71,7 +71,7 @@ pub fn launch() -> (FrontendThreadState, realtime_send_queue::Consumer<Event>) {
 
 	let metronome = AudioMetronome::new(&client).unwrap();
 
-	let loop_length = client.sample_rate() as u32 * 4;
+	let loop_length = client.sample_rate() as u32 * 6;
 	let (frontend_thread_state, event_queue) = create_thread_states(client, vec![], vec![], metronome, loop_length);
 
 	return (frontend_thread_state, event_queue);

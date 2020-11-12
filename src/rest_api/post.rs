@@ -75,7 +75,7 @@ pub async fn post_chain(state: State<'_, std::sync::Arc<GuiState>>, synthid: u32
 }
 
 #[post("/synths/<synthid>/chains/<chainid>/takes", data="<data>")]
-pub async fn post_take(state: State<'_, std::sync::Arc<GuiState>>, synthid: u32, chainid: u32, data: Json<TakePost>) -> Result<(), Status> {
+pub async fn post_take(state: State<'_, std::sync::Arc<GuiState>>, synthid: u32, chainid: u32, data: Json<TakePost>) -> Result<rocket::response::status::Created<()>, Status> {
 	let mut guard_ = state.mutex.lock().await;
 	let guard = &mut *guard_;
 	if let Some(synth) = guard.synths.iter_mut().find(|s| s.id == synthid) {
@@ -116,7 +116,7 @@ pub async fn post_take(state: State<'_, std::sync::Arc<GuiState>>, synthid: u32,
 				associated_midi_takes: Vec::new()
 			});
 			state.update_list.push(make_update_take(chain.takes.last().unwrap(), synthid, chainid)).await;
-			return Ok(());
+			return Ok(rocket::response::status::Created::new(format!("/api/synths/{}/chains/{}/takes/{}", synthid, chainid, audio_id)));
 		}
 	}
 	Err(Status::NotFound)
