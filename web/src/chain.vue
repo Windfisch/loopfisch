@@ -64,7 +64,7 @@ module.exports = {
 		toggle_midi: function(take) {
 			if (take.type == "Audio") {
 				console.log(take.midimute);
-				this.update_associated_midi_takes(take, !take.midimute);
+				this.update_associated_midi_takes(take, !this.read_associated_midi_takes(take));
 				if (!take.audiomute && !take.midimute) {
 					take.muted = true;
 				}
@@ -74,8 +74,15 @@ module.exports = {
 			}
 
 		},
+		read_associated_midi_takes: function(take) {
+			var result = true;
+			for (var id of take.associated_midi_takes) {
+				var miditake = this.takes.find(t => t.id == id);
+				result = result && miditake.muted;
+			}
+			return result;
+		},
 		update_associated_midi_takes: function(take, value) {
-			console.log(this);
 			for (var id of take.associated_midi_takes) {
 				var miditake = this.takes.find(t => t.id == id);
 				console.log(miditake);
