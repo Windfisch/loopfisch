@@ -17,6 +17,10 @@ module.exports = {
 		},
 		audiomute: function() {
 			return this.reference.muted;
+		},
+		playback_progress: function () {
+			return (this.$root.playback_time % 4000) / 4000;
+		},
 		}
 	},
 	methods: {
@@ -35,7 +39,7 @@ module.exports = {
 				<div style="width:2em; margin: 0; padding:0; text-align:center">
 					<pie class="blinking" width='0.75em' value=1 v-if="reference.state=='Waiting'" v-bind:color="play_audio ? 'red' : 'blue'"></pie>
 					<pie width='0.75em' value=1 v-else-if="reference.state=='Recording'" v-bind:color="play_audio ? 'red' : 'blue'"></pie>
-					<pie width='1.5em' v-else v-bind:color="play_audio ? 'red' : 'blue'"></pie>
+					<pie width='1.5em' v-bind:value="playback_progress" v-else v-bind:color="play_audio ? 'red' : 'blue'"></pie>
 				</div>
 				<div>{{name}}, {{reference.state}}</div>
 				<div style="flex-grow: 2"></div>

@@ -13,6 +13,7 @@ Vue.component("synth", synth);
 var app2 = new Vue({
 	el: '#app',
 	data: {
+		playback_time: 0,
 		message: "Hello World",
 		count: 0,
 		user_id: "<not registered yet>",
@@ -224,6 +225,7 @@ console.log(app2.synths);
 
 async function async_main() {
 	await init();
+	timeloop();
 	await mainloop(); // never returns
 }
 
@@ -234,6 +236,15 @@ async function init() {
 	console.log(json);
 	app2.synths = json;
 	console.log(app2.synths);
+}
+
+async function timeloop()
+{
+	const fps = 20;
+	while(true) {
+		app2.playback_time = new Date().getTime();
+		await new Promise(r => setTimeout(r, 1000 / fps));
+	}
 }
 
 async function mainloop()
