@@ -8,7 +8,20 @@ use super::data::{Synth,Chain,Take,RecordingState,EngineTakeRef};
 #[derive(Serialize, Clone)]
 pub struct Update {
 	pub id: u64,
-	pub action: UpdateRoot
+	pub action: UpdateContent
+}
+
+#[derive(Serialize, Clone)]
+pub struct Timestamps {
+	pub song_position: f32,
+	pub transport_position: f32,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(untagged)]
+pub enum UpdateContent {
+	Root(UpdateRoot),
+	Timestamps(Timestamps)
 }
 
 #[derive(Serialize, Clone)]
@@ -59,18 +72,18 @@ pub struct UpdateTake {
 	pub deleted: Option<bool>
 }
 
-pub fn make_update_synth(synth: &Synth) -> UpdateRoot {
-	UpdateRoot {
+pub fn make_update_synth(synth: &Synth) -> UpdateContent {
+	UpdateContent::Root(UpdateRoot {
 		synths: vec![UpdateSynth {
 			id: synth.id,
 			name: Some(synth.name.clone()),
 			..Default::default()
 		}]
-	}
+	})
 }
 
-pub fn make_update_chain(chain: &Chain, synthid: u32) -> UpdateRoot {
-	UpdateRoot {
+pub fn make_update_chain(chain: &Chain, synthid: u32) -> UpdateContent {
+	UpdateContent::Root(UpdateRoot {
 		synths: vec![UpdateSynth {
 			id: synthid,
 			chains: Some(vec![UpdateChain {
@@ -81,11 +94,11 @@ pub fn make_update_chain(chain: &Chain, synthid: u32) -> UpdateRoot {
 			}]),
 			..Default::default()
 		}]
-	}
+	})
 }
 
-pub fn make_update_take(take: &Take, synthid: u32, chainid: u32) -> UpdateRoot {
-	UpdateRoot {
+pub fn make_update_take(take: &Take, synthid: u32, chainid: u32) -> UpdateContent {
+	UpdateContent::Root(UpdateRoot {
 		synths: vec![UpdateSynth {
 			id: synthid,
 			chains: Some(vec![UpdateChain {
@@ -104,7 +117,7 @@ pub fn make_update_take(take: &Take, synthid: u32, chainid: u32) -> UpdateRoot {
 			}]),
 			..Default::default()
 		}]
-	}
+	})
 }
 
 pub struct UpdateList {
@@ -120,7 +133,7 @@ impl UpdateList {
 		};
 	}
 
-	pub async fn push(&self, action: UpdateRoot) {
+	pub async fn push(&self, action: UpdateContent) {
 		let mut guard = self.updates.lock().await;
 		let id = guard.0;
 		guard.1.push_back( Update{ id, action} );

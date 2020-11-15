@@ -89,8 +89,15 @@ impl AudioThreadState {
 			self.process_audio_recording(scope);
 			self.process_midi_recording(scope);
 
-			self.song_position = (self.song_position + scope.n_frames()) % self.song_length;
+			self.song_position = self.song_position + scope.n_frames();
+			let song_wraps = self.song_position >= self.song_length;
+			self.song_position %= self.song_length;
 			self.transport_position += scope.n_frames();
+
+			if song_wraps {
+				println!("song wraps");
+				self.event_channel.send_or_complain(Event::Timestamp(self.song_position, self.transport_position));
+			}
 
 			self.shared.song_length.store(self.song_length, std::sync::atomic::Ordering::Relaxed);
 			self.shared.song_position.store(self.song_position, std::sync::atomic::Ordering::Relaxed);

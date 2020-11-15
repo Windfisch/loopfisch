@@ -19,7 +19,7 @@ module.exports = {
 			return this.reference.type == "Audio" ? this.reference.muted : true;
 		},
 		playback_progress: function () {
-			return (this.$root.playback_time % 4000) / 4000;
+			return (this.$root.playback_time % 6000) / 6000; // FIXME put song length here
 		},
 		pie_color: function () {
 			if (!this.audiomute) {

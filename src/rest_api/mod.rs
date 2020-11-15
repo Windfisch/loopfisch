@@ -93,6 +93,15 @@ pub async fn launch_server(engine: FrontendThreadState, event_channel_: realtime
 						panic!();
 					}
 				}
+				Event::Timestamp(song_position, transport_position) =>
+				{
+					state2.update_list.push(UpdateContent::Timestamps(
+						Timestamps {
+							song_position: song_position as f32 / 44100.0,
+							transport_position: transport_position as f32 / 44100.0,
+						}
+					)).await;
+				}
 				Event::Kill =>
 				{
 					println!("\n\n\n############# error reading\n\n\n"); break;

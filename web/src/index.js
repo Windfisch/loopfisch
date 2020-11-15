@@ -240,9 +240,10 @@ async function init() {
 
 async function timeloop()
 {
+	app2.playback_time_offset = -new Date().getTime();
 	const fps = 20;
 	while(true) {
-		app2.playback_time = new Date().getTime();
+		app2.playback_time = new Date().getTime() + app2.playback_time_offset;
 		await new Promise(r => setTimeout(r, 1000 / fps));
 	}
 }
@@ -263,12 +264,19 @@ async function mainloop()
 			if (Number.isInteger(update.id))
 			{
 				next_update_id = Math.max(next_update_id, update.id + 1);
-				try {
-					apply_patch(update.action);
+				if (update.action.synths !== undefined) {
+					try {
+						apply_patch(update.action);
+					}
+					catch (e) {
+						console.log("Error while applying update")
+						console.log(e);
+					}
 				}
-				catch (e) {
-					console.log("Error while applying update")
-					console.log(e);
+				if (update.action.song_position !== undefined) {
+					console.log("timestamp ")
+					console.log(update.action.song_position);
+					app2.playback_time_offset = update.action.song_position - new Date().getTime();
 				}
 			}
 		}
