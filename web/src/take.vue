@@ -16,11 +16,21 @@ module.exports = {
 			}
 		},
 		audiomute: function() {
-			return this.reference.muted;
+			return this.reference.type == "Audio" ? this.reference.muted : true;
 		},
 		playback_progress: function () {
 			return (this.$root.playback_time % 4000) / 4000;
 		},
+		pie_color: function () {
+			if (!this.audiomute) {
+				return "red";
+			}
+			else if (!this.midimute) {
+				return "blue";
+			}
+			else {
+				return "white";
+			}
 		}
 	},
 	methods: {
@@ -37,9 +47,9 @@ module.exports = {
 <template>
 			<div class="takebox" v-bind:style="audio ? '' : 'background-color: #ccf' ">
 				<div style="width:2em; margin: 0; padding:0; text-align:center">
-					<pie class="blinking" width='0.75em' value=1 v-if="reference.state=='Waiting'" v-bind:color="play_audio ? 'red' : 'blue'"></pie>
-					<pie width='0.75em' value=1 v-else-if="reference.state=='Recording'" v-bind:color="play_audio ? 'red' : 'blue'"></pie>
-					<pie width='1.5em' v-bind:value="playback_progress" v-else v-bind:color="play_audio ? 'red' : 'blue'"></pie>
+					<pie class="blinking" width='0.75em' value=1 v-if="reference.state=='Waiting'" v-bind:color="pie_color"></pie>
+					<pie width='0.75em' value=1 v-else-if="reference.state=='Recording'" v-bind:color="pie_color"></pie>
+					<pie width='1.5em' v-bind:value="playback_progress" v-else v-bind:color="pie_color"></pie>
 				</div>
 				<div>{{name}}, {{reference.state}}</div>
 				<div style="flex-grow: 2"></div>
