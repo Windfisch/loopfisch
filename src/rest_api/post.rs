@@ -86,7 +86,7 @@ pub async fn post_take(state: State<'_, std::sync::Arc<GuiState>>, synthid: u32,
 
 			let mut associated_midi_takes: Vec<u32> =
 				chain.takes.iter()
-					.filter( |t| t.is_midi() && !t.is_audible() )
+					.filter( |t| t.is_midi() && t.is_audible() )
 					.map(|t| t.id)
 					.collect();
 			associated_midi_takes.push(midi_id);
