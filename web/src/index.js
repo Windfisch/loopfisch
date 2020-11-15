@@ -229,6 +229,10 @@ async function async_main() {
 	await mainloop(); // never returns
 }
 
+function now() {
+	return new Date().getTime() / 1000.0;
+}
+
 async function init() {
 	var response = await fetch("http://localhost:8000/api/synths");
 	var json = await response.json();
@@ -239,7 +243,7 @@ async function init() {
 
 	var response2 = await fetch("http://localhost:8000/api/song");
 	var song = await response2.json();
-	app2.playback_time_offset = (song.song_position || 0)*1000 - new Date().getTime();
+	app2.playback_time_offset = (song.song_position || 0) - now();
 	app2.loop_length = song.loop_length;
 }
 
@@ -247,7 +251,7 @@ async function timeloop()
 {
 	const fps = 20;
 	while(true) {
-		app2.playback_time = new Date().getTime() + app2.playback_time_offset;
+		app2.playback_time = now() + app2.playback_time_offset;
 		await new Promise(r => setTimeout(r, 1000 / fps));
 	}
 }
@@ -257,10 +261,10 @@ async function mainloop()
 	var next_update_id = 0;
 	while (true) {
 		console.log("polling for updates since " + next_update_id);
-		var begin_time = new Date().getTime();
+		var begin_time = now();
 		var response = await fetch("http://localhost:8000/api/updates?since=" + next_update_id + "&seconds=10");
 		var update_list = await response.json();
-		var duration = new Date().getTime() - begin_time;
+		var duration = now() - begin_time;
 
 		console.log(response.status);
 		console.log(update_list);
@@ -280,11 +284,11 @@ async function mainloop()
 					}
 				}
 				if (update.action.song_position !== undefined) { // only update the time when the answer was really polled.
-					if (duration >= 100) {
+					if (duration >= 0.1) {
 						console.log("timestamp ");
 						console.log(duration);
 						console.log(update.action.song_position);
-						app2.playback_time_offset = update.action.song_position - new Date().getTime();
+						app2.playback_time_offset = update.action.song_position - now();
 					}
 					else {
 						console.log("IGNORING TIMESTAMP");
