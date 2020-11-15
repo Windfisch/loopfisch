@@ -1,5 +1,12 @@
 use serde::Serialize;
 
+#[derive(Serialize,Clone)]
+pub struct Song {
+	pub song_position: f32,
+	pub transport_position: f32,
+	pub playing: bool,
+	pub loop_length: f32
+}
 
 #[derive(Serialize,Clone)]
 pub struct Synth {

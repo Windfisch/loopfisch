@@ -30,7 +30,7 @@ use crate::realtime_send_queue;
 
 pub fn create_thread_states(client: jack::Client, devices: Vec<AudioDevice>, mididevices: Vec<MidiDevice>, metronome: AudioMetronome, song_length: u32) -> (FrontendThreadState, realtime_send_queue::Consumer<Event>) {
 	let shared = Arc::new(SharedThreadState {
-		song_length: AtomicU32::new(1),
+		song_length: AtomicU32::new(song_length),
 		song_position: AtomicU32::new(0),
 		transport_position: AtomicU32::new(0),
 	});
@@ -64,14 +64,14 @@ pub fn create_thread_states(client: jack::Client, devices: Vec<AudioDevice>, mid
 	return (frontend_thread_state, event_consumer);
 }
 
-pub fn launch() -> (FrontendThreadState, realtime_send_queue::Consumer<Event>) {
+pub fn launch(loop_length_msec: u32) -> (FrontendThreadState, realtime_send_queue::Consumer<Event>) {
 	let (client, _status) = jack::Client::new("loopfisch", jack::ClientOptions::NO_START_SERVER).unwrap();
 
 	println!("JACK running with sampling rate {} Hz, buffer size = {} samples", client.sample_rate(), client.buffer_size());
 
 	let metronome = AudioMetronome::new(&client).unwrap();
 
-	let loop_length = client.sample_rate() as u32 * 6;
+	let loop_length = client.sample_rate() as u32 * loop_length_msec / 1000;
 	let (frontend_thread_state, event_queue) = create_thread_states(client, vec![], vec![], metronome, loop_length);
 
 	return (frontend_thread_state, event_queue);

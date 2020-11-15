@@ -72,6 +72,22 @@ pub struct FrontendThreadState {
 }
 
 impl FrontendThreadState {
+	pub fn sample_rate(&self) -> u32 {
+		self.async_client.as_client().sample_rate() as u32
+	}
+
+	pub fn loop_length(&self) -> u32 {
+		self.shared.song_length.load(std::sync::atomic::Ordering::Relaxed)
+	}
+
+	pub fn song_position(&self) -> u32 {
+		self.shared.song_position.load(std::sync::atomic::Ordering::Relaxed)
+	}
+
+	pub fn transport_position(&self) -> u32 {
+		self.shared.transport_position.load(std::sync::atomic::Ordering::Relaxed)
+	}
+
 	pub fn devices(&self) -> &HashMap<usize, GuiAudioDevice> { &self.devices}
 	pub fn mididevices(&self) -> &HashMap<usize, GuiMidiDevice> { &self.mididevices}
 

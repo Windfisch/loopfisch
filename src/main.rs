@@ -41,7 +41,7 @@ static A: assert_no_alloc::AllocDisabler = assert_no_alloc::AllocDisabler;
 async fn main() {
     println!("Hello, world!");
 
-	let (engine, event_queue) = engine::launch();
+	let (engine, event_queue) = engine::launch(6000);
 	rest_api::launch_server(engine, event_queue).await;
 	return;
 }

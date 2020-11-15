@@ -114,6 +114,7 @@ pub async fn launch_server(engine: FrontendThreadState, event_channel_: realtime
 		.manage(state)
 		.mount("/api", routes![
 			cors::options,
+			song_get,
 			updates,
 			synths_get, synths_get_one,
 			chains_get, chains_get_one,

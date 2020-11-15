@@ -236,11 +236,15 @@ async function init() {
 	console.log(json);
 	app2.synths = json;
 	console.log(app2.synths);
+
+	var response2 = await fetch("http://localhost:8000/api/song");
+	var song = await response2.json();
+	app2.playback_time_offset = (song.song_position || 0)*1000 - new Date().getTime();
+	app2.loop_length = song.loop_length;
 }
 
 async function timeloop()
 {
-	app2.playback_time_offset = -new Date().getTime();
 	const fps = 20;
 	while(true) {
 		app2.playback_time = new Date().getTime() + app2.playback_time_offset;
