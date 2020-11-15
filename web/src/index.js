@@ -211,7 +211,6 @@ var app2 = new Vue({
 				if (this.synths.find(x => x.id === json.id) === undefined) {
 					this.synths.push(json);
 				}
-				console.log(this.synths);
 			}
 			else {
 				alert("Failed to create synth!");
@@ -220,8 +219,6 @@ var app2 = new Vue({
 		}
 	}
 })
-
-console.log(app2.synths);
 
 async function async_main() {
 	await init();
@@ -236,10 +233,7 @@ function now() {
 async function init() {
 	var response = await fetch("http://localhost:8000/api/synths");
 	var json = await response.json();
-	console.log("fnord");
-	console.log(json);
 	app2.synths = json;
-	console.log(app2.synths);
 
 	var response2 = await fetch("http://localhost:8000/api/song");
 	var song = await response2.json();
@@ -260,17 +254,12 @@ async function mainloop()
 {
 	var next_update_id = 0;
 	while (true) {
-		console.log("polling for updates since " + next_update_id);
 		var begin_time = now();
 		var response = await fetch("http://localhost:8000/api/updates?since=" + next_update_id + "&seconds=10");
 		var update_list = await response.json();
 		var duration = now() - begin_time;
 
-		console.log(response.status);
-		console.log(update_list);
-
 		for (var update of update_list) {
-			console.log(update);
 			if (Number.isInteger(update.id))
 			{
 				next_update_id = Math.max(next_update_id, update.id + 1);
@@ -285,13 +274,10 @@ async function mainloop()
 				}
 				if (update.action.song_position !== undefined) { // only update the time when the answer was really polled.
 					if (duration >= 0.1) {
-						console.log("timestamp ");
-						console.log(duration);
-						console.log(update.action.song_position);
 						app2.playback_time_offset = update.action.song_position - now();
 					}
 					else {
-						console.log("IGNORING TIMESTAMP");
+						console.log("ignoring timestamp which likely is stale");
 					}
 				}
 			}
@@ -300,9 +286,6 @@ async function mainloop()
 }
 
 function apply_patch(patch) {
-	console.log("Applying patch");
-	console.log(patch);
-
 	helper(
 		app2.synths, patch.synths, ["name"],
 		[
@@ -318,12 +301,6 @@ function apply_patch(patch) {
 }
 
 function helper(array_to_patch, patch_array, props, arrayprops) {
-	console.log("Patching");
-	console.log(array_to_patch);
-	console.log("patch is");
-	console.log(patch_array);
-	console.log("props:");
-	console.log(props);
 	for (let patch of patch_array) {
 		if (patch.delete === true) {
 			let index = array_to_patch.findIndex( x => x.id === patch.id );
@@ -344,14 +321,12 @@ function helper(array_to_patch, patch_array, props, arrayprops) {
 			}
 
 			for (let prop of props) {
-				console.log(prop, patch[prop]);
 				if (patch[prop] !== undefined) {
 					object_to_patch[prop] = patch[prop];
 				}
 			}
 
 			for (let arrayprop of arrayprops) {
-				console.log("arrayprop", arrayprop[0], patch[arrayprop[0]]);
 				if (patch[arrayprop[0]] !== undefined) {
 					helper(object_to_patch[arrayprop[0]], patch[arrayprop[0]], arrayprop[1], arrayprop[2])
 				}

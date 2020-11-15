@@ -27,7 +27,6 @@ module.exports = {
 				if (this.model.chains.find(x => x.id === json.id) === undefined) {
 					this.model.chains.push(json);
 				}
-				console.log(this.model);
 			}
 			else {
 				alert("Failed to create chain!");

@@ -33,7 +33,6 @@ module.exports = {
 				if (this.model.takes.find(x => x.id === json.id) === undefined) {
 					this.model.takes.push(json);
 				}
-				console.log(this.model);
 			}
 			else {
 				alert("Failed to create take!");
@@ -63,7 +62,6 @@ module.exports = {
 		},
 		toggle_midi: function(take) {
 			if (take.type == "Audio") {
-				console.log(take.midimute);
 				this.update_associated_midi_takes(take, !this.read_associated_midi_takes(take));
 				if (!take.audiomute && !take.midimute) {
 					take.muted = true;
@@ -85,7 +83,6 @@ module.exports = {
 		update_associated_midi_takes: function(take, value) {
 			for (var id of take.associated_midi_takes) {
 				var miditake = this.takes.find(t => t.id == id);
-				console.log(miditake);
 				miditake.muted = value;
 			}
 		}
