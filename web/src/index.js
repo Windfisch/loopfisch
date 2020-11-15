@@ -257,8 +257,10 @@ async function mainloop()
 	var next_update_id = 0;
 	while (true) {
 		console.log("polling for updates since " + next_update_id);
+		var begin_time = new Date().getTime();
 		var response = await fetch("http://localhost:8000/api/updates?since=" + next_update_id + "&seconds=10");
 		var update_list = await response.json();
+		var duration = new Date().getTime() - begin_time;
 
 		console.log(response.status);
 		console.log(update_list);
@@ -277,10 +279,16 @@ async function mainloop()
 						console.log(e);
 					}
 				}
-				if (update.action.song_position !== undefined) {
-					console.log("timestamp ")
-					console.log(update.action.song_position);
-					app2.playback_time_offset = update.action.song_position - new Date().getTime();
+				if (update.action.song_position !== undefined) { // only update the time when the answer was really polled.
+					if (duration >= 100) {
+						console.log("timestamp ");
+						console.log(duration);
+						console.log(update.action.song_position);
+						app2.playback_time_offset = update.action.song_position - new Date().getTime();
+					}
+					else {
+						console.log("IGNORING TIMESTAMP");
+					}
 				}
 			}
 		}
