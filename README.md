@@ -20,3 +20,14 @@ Features
 - Browser-based user interface
 - Fully (PC-)keyboard-controllable (_not yet_)
 - MIDI clock master, MIDI transport slave (_not yet_)
+
+Build instructions
+------------------
+
+Currently, you need to use the *unstable* Rust toolchain. 
+You can add a per-directory override using
+
+```rustup override set nightly```
+
+You might need to update rust, for more information, you can refer to
+https://rocket.rs/v0.4/guide/getting-started/.
