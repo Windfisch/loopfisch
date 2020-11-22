@@ -159,18 +159,18 @@ impl FrontendThreadState {
 		Ok(id)
 	}
 
-	pub fn toggle_audiotake_muted(&mut self, audiodev_id: usize, take_id: usize) -> Result<(),()> {
+	pub fn set_audiotake_unmuted(&mut self, audiodev_id: usize, take_id: usize, unmuted: bool) -> Result<(),()> {
 		let take = &mut self.devices.get_mut(&audiodev_id).unwrap().takes[take_id];
-		let old_unmuted = take.unmuted;
-		self.command_channel.send_message(Message::SetAudioMute(take.id, old_unmuted))?;
-		take.unmuted = !old_unmuted;
+		if take.unmuted == unmuted { return Ok(()); }
+		self.command_channel.send_message(Message::SetAudioMute(take.id, unmuted))?;
+		take.unmuted = unmuted;
 		Ok(())
 	}
-	pub fn toggle_miditake_muted(&mut self, audiodev_id: usize, take_id: usize) -> Result<(),()> {
-		let take = &mut self.mididevices.get_mut(&audiodev_id).unwrap().takes[take_id];
-		let old_unmuted = take.unmuted;
-		self.command_channel.send_message(Message::SetMidiMute(take.id, old_unmuted))?;
-		take.unmuted = !old_unmuted;
+	pub fn set_miditake_unmuted(&mut self, mididev_id: usize, take_id: usize, unmuted: bool) -> Result<(),()> {
+		let take = &mut self.mididevices.get_mut(&mididev_id).unwrap().takes[take_id];
+		if take.unmuted == unmuted { return Ok(()); }
+		self.command_channel.send_message(Message::SetMidiMute(take.id, unmuted))?;
+		take.unmuted = unmuted;
 		Ok(())
 	}
 }
