@@ -55,10 +55,12 @@ module.exports = {
 		},
 		toggle_audio: function(take) {
 			take.muted = !take.muted;
-
+			
 			if (!take.audiomute && !take.midimute) {
 				this.update_associated_midi_takes(take, true);
 			}
+			
+			this.send_mute_patch(take);
 		},
 		toggle_midi: function(take) {
 			if (take.type == "Audio") {
@@ -70,7 +72,32 @@ module.exports = {
 			else {
 				take.muted = !take.muted;
 			}
+			this.send_mute_patch(take);
+		},
+		send_mute_patch: async function(take) {
+			var synthid = this.$parent.model.id;
+			var chainid = this.model.id;
 
+			var patch = [];
+			patch.push({id: take.id, muted: take.muted});
+			for (var id of take.associated_midi_takes) {
+				var miditake = this.takes.find(t => t.id == id);
+				patch.push({id: id, muted: miditake.muted});
+			}
+
+			console.log("sending patch");
+			console.log(patch);
+
+			var req = await fetch(
+				"http://localhost:8000/api/synths/" + this.synthid
+				+ "/chains/" + this.id + "/takes", {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				redirect: 'follow',
+				mode: 'cors',
+				body: JSON.stringify(patch)
+			});
+			console.log(req.status);
 		},
 		read_associated_midi_takes: function(take) {
 			var result = true;

@@ -51,7 +51,7 @@ module.exports = {
 					<pie width='0.75em' value=1 v-else-if="reference.state=='Recording'" v-bind:color="pie_color"></pie>
 					<pie width='1.5em' v-bind:value="playback_progress" v-else v-bind:color="pie_color"></pie>
 				</div>
-				<div>{{name}}, {{reference.state}}</div>
+				<div>{{name}} ({{reference.id}}), {{reference.state}}</div>
 				<div style="flex-grow: 2"></div>
 				<img v-on:click="toggle_audio" v-if="audio" v-bind:src="'audio2' + (audiomute ? 'g' : '') + '.svg'" style="height: 75%" />
 				<img v-on:click="toggle_midi" v-if="midi" v-bind:src="'midi2' + (midimute ? 'g' : '') + '.svg'" style="height: 75%" />
