@@ -185,10 +185,11 @@ fn patch_take_(engine: &mut FrontendThreadState, mididevice_id: usize, audiodevi
 				take_to_patch.name = name.clone();
 			}
 			if let Some(muted) = patch.muted {
-				//match take_to_patch.engine_take_id {
-					// TODO EngineTakeRef::Audio(id) => { engine.set_audiotake_unmuted(audiodevice_id, id, !muted); }
-					// TODO EngineTakeRef::Midi(id) => { engine.set_miditake_unmuted(mididevice_id, id, !muted); }
-				//}
+				println!("patching take {} ({}) muted {}", take_to_patch.id, take_to_patch.name, muted);
+				match take_to_patch.engine_take_id {
+					EngineTakeRef::Audio(id) => { engine.set_audiotake_unmuted(audiodevice_id, id, !muted); }
+					EngineTakeRef::Midi(id) => { engine.set_miditake_unmuted(mididevice_id, id, !muted); }
+				}
 				take_to_patch.muted = muted;
 			}
 			if let Some(muted_scheduled) = patch.muted_scheduled {

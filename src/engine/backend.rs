@@ -150,13 +150,13 @@ impl AudioThreadState {
 						}
 						Message::NewAudioTake(take) => { println!("\ngot take"); self.audiotakes.push_back(take); }
 						Message::NewMidiTake(take) => { println!("\ngot miditake"); self.miditakes.push_back(take); }
-						Message::SetAudioMute(id, muted) => {
+						Message::SetAudioMute(id, unmuted) => {
 							// FIXME this is not nice...
 							let mut cursor = self.audiotakes.front();
 							while let Some(node) = cursor.get() {
 								let mut t = node.take.borrow_mut();
 								if t.id == id {
-									t.unmuted = !muted;
+									t.unmuted = unmuted;
 									break;
 								}
 								cursor.move_next();
@@ -165,13 +165,13 @@ impl AudioThreadState {
 								panic!("could not find take to mute");
 							}
 						}
-						Message::SetMidiMute(id, muted) => {
+						Message::SetMidiMute(id, unmuted) => {
 							// FIXME this is not nice...
 							let mut cursor = self.miditakes.front();
 							while let Some(node) = cursor.get() {
 								let mut t = node.take.borrow_mut();
 								if t.id == id {
-									t.unmuted = !muted;
+									t.unmuted = unmuted;
 									break;
 								}
 								cursor.move_next();

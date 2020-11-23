@@ -25,22 +25,22 @@ pub struct GuiMidiTake {
 
 pub struct GuiAudioDevice {
 	pub info: AudioDeviceInfo,
-	pub takes: Vec<GuiAudioTake>,
+	pub takes: HashMap<u32, GuiAudioTake>,
 }
 
 impl GuiAudioDevice {
 	pub fn info(&self) -> &AudioDeviceInfo { &self.info }
-	pub fn takes(&self) -> &Vec<GuiAudioTake> { &self.takes }
+	pub fn takes(&self) -> &HashMap<u32, GuiAudioTake> { &self.takes }
 }
 
 pub struct GuiMidiDevice {
 	pub info: MidiDeviceInfo,
-	pub takes: Vec<GuiMidiTake>,
+	pub takes: HashMap<u32, GuiMidiTake>,
 }
 
 impl GuiMidiDevice {
 	pub fn info(&self) -> &MidiDeviceInfo { &self.info }
-	pub fn takes(&self) -> &Vec<GuiMidiTake> { &self.takes }
+	pub fn takes(&self) -> &HashMap<u32, GuiMidiTake> { &self.takes }
 }
 
 
@@ -94,7 +94,7 @@ impl FrontendThreadState {
 	pub fn add_device(&mut self, name: &str, channels: u32) -> Result<usize,()> {
 		if let Some(id) = find_first_free_index(&self.devices, 32) {
 			let dev = AudioDevice::new(self.async_client.as_client(), channels, name).map_err(|_|())?;
-			let guidev = GuiAudioDevice { info: dev.info(), takes: Vec::new() };
+			let guidev = GuiAudioDevice { info: dev.info(), takes: HashMap::new() };
 			self.command_channel.send_message(Message::UpdateAudioDevice(id, Some(dev)))?;
 			self.devices.insert(id, guidev);
 			Ok(id)
@@ -106,7 +106,7 @@ impl FrontendThreadState {
 	pub fn add_mididevice(&mut self, name: &str) -> Result<usize,()> {
 		if let Some(id) = find_first_free_index(&self.mididevices, 32) {
 			let dev = MidiDevice::new(self.async_client.as_client(), name).map_err(|_|())?;
-			let guidev = GuiMidiDevice { info: dev.info(), takes: Vec::new() };
+			let guidev = GuiMidiDevice { info: dev.info(), takes: HashMap::new() };
 			self.command_channel.send_message(Message::UpdateMidiDevice(id, Some(dev)))?;
 			self.mididevices.insert(id, guidev);
 			Ok(id)
@@ -132,7 +132,7 @@ impl FrontendThreadState {
 		let take_node = Box::new(AudioTakeNode::new(take));
 
 		self.command_channel.send_message(Message::NewAudioTake(take_node))?;
-		self.devices.get_mut(&audiodev_id).unwrap().takes.push(GuiAudioTake{id, audiodev_id, unmuted});
+		self.devices.get_mut(&audiodev_id).unwrap().takes.insert(id, GuiAudioTake{id, audiodev_id, unmuted});
 		Ok(id)
 	}
 
@@ -155,19 +155,19 @@ impl FrontendThreadState {
 		let take_node = Box::new(MidiTakeNode::new(take));
 
 		self.command_channel.send_message(Message::NewMidiTake(take_node))?;
-		self.mididevices.get_mut(&mididev_id).unwrap().takes.push(GuiMidiTake{id, mididev_id, unmuted});
+		self.mididevices.get_mut(&mididev_id).unwrap().takes.insert(id, GuiMidiTake{id, mididev_id, unmuted});
 		Ok(id)
 	}
 
-	pub fn set_audiotake_unmuted(&mut self, audiodev_id: usize, take_id: usize, unmuted: bool) -> Result<(),()> {
-		let take = &mut self.devices.get_mut(&audiodev_id).unwrap().takes[take_id];
+	pub fn set_audiotake_unmuted(&mut self, audiodev_id: usize, take_id: u32, unmuted: bool) -> Result<(),()> {
+		let take = &mut self.devices.get_mut(&audiodev_id).unwrap().takes.get_mut(&take_id).unwrap(); // TODO propagate error
 		if take.unmuted == unmuted { return Ok(()); }
 		self.command_channel.send_message(Message::SetAudioMute(take.id, unmuted))?;
 		take.unmuted = unmuted;
 		Ok(())
 	}
-	pub fn set_miditake_unmuted(&mut self, mididev_id: usize, take_id: usize, unmuted: bool) -> Result<(),()> {
-		let take = &mut self.mididevices.get_mut(&mididev_id).unwrap().takes[take_id];
+	pub fn set_miditake_unmuted(&mut self, mididev_id: usize, take_id: u32, unmuted: bool) -> Result<(),()> {
+		let take = &mut self.mididevices.get_mut(&mididev_id).unwrap().takes.get_mut(&take_id).unwrap(); // TODO propagate error
 		if take.unmuted == unmuted { return Ok(()); }
 		self.command_channel.send_message(Message::SetMidiMute(take.id, unmuted))?;
 		take.unmuted = unmuted;
