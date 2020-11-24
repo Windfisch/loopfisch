@@ -1,6 +1,6 @@
 <script>
 module.exports = {
-	props: ['name', 'audio', 'midi', 'play_audio', 'play_progress', 'play_blinking', 'reference' ],
+	props: ['name', 'audio', 'midi', 'play_progress', 'play_blinking', 'reference' ],
 	computed: {
 		midimute: function() {
 			if (this.reference.type == "Audio") {

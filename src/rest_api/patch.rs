@@ -94,8 +94,8 @@ pub async fn patch_takes(state: State<'_, std::sync::Arc<GuiState>>, synthid: u3
 		if let Some(chain) = synth.chains.iter_mut().find(|c| c.id == chainid) {
 			patch_takes_(&mut guard.engine, synth.engine_mididevice_id, chain.engine_audiodevice_id, &mut chain.takes, &*patch, true)?;
 			patch_takes_(&mut guard.engine, synth.engine_mididevice_id, chain.engine_audiodevice_id, &mut chain.takes, &*patch, false).unwrap();
-			for _p in patch.iter() {
-				// state.update_list.push(make_update_take(chain.takes.iter().find(|s| s.id == p.id).unwrap(), synthid, chainid)).await; TODO
+			for p in patch.iter() {
+				state.update_list.push(make_update_take(chain.takes.iter().find(|s| s.id == p.id).unwrap(), synthid, chainid)).await;
 			}
 			return Ok(());
 		}
@@ -114,7 +114,7 @@ pub async fn patch_take(state: State<'_, std::sync::Arc<GuiState>>, synthid: u32
 			}
 			patch_take_(&mut guard.engine, synth.engine_mididevice_id, chain.engine_audiodevice_id, &mut chain.takes, &*patch, true)?;
 			patch_take_(&mut guard.engine, synth.engine_mididevice_id, chain.engine_audiodevice_id, &mut chain.takes, &*patch, false).unwrap();
-			// state.update_list.push(make_update_take(chain.takes.iter().find(|s| s.id == patch.id).unwrap(), synthid, chainid)).await; TODO
+			state.update_list.push(make_update_take(chain.takes.iter().find(|s| s.id == patch.id).unwrap(), synthid, chainid)).await;
 			return Ok(());
 		}
 	}
