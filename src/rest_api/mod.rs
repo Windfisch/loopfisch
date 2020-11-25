@@ -101,6 +101,7 @@ pub async fn launch_server(engine: FrontendThreadState, event_channel_: realtime
 						song: Some(UpdateSong {
 							song_position: Some(song_position as f32 / sample_rate as f32),
 							transport_position: Some(transport_position as f32 / sample_rate as f32),
+							loop_length: None,
 						})
 					}).await;
 				}
@@ -116,7 +117,7 @@ pub async fn launch_server(engine: FrontendThreadState, event_channel_: realtime
 		.manage(state)
 		.mount("/api", routes![
 			cors::options,
-			song_get,
+			song_get, song_patch,
 			updates,
 			synths_get, synths_get_one,
 			chains_get, chains_get_one,

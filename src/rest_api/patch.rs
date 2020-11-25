@@ -7,6 +7,35 @@ use super::updates::*;
 use crate::engine::FrontendThreadState;
 
 #[derive(Deserialize,Clone)]
+pub struct SongPatch {
+	loop_length: Option<f32>
+}
+
+#[patch("/song", data="<patch>")]
+pub async fn song_patch(state: State<'_, std::sync::Arc<GuiState>>, patch: Json<SongPatch>) -> Result<(), Status> {
+	let mut guard = state.mutex.lock().await;
+	let e = &mut guard.engine;
+
+	if let Some(loop_length) = patch.loop_length {
+		e.set_loop_length( (e.sample_rate() as f32 * loop_length) as u32 )
+			.map_err(|_| Status::UnprocessableEntity)?;
+		state.update_list.push( UpdateRoot {
+			synths: None,
+			song: Some(UpdateSong {
+				song_position: None,
+				transport_position: None,
+				loop_length: Some(loop_length) // FIXME use the looplength retrieved from the engine, after fixing the problems there.
+			})
+		}).await;
+	}
+
+	Ok(())
+}
+
+
+
+
+#[derive(Deserialize,Clone)]
 pub struct SynthPatch {
 	id: u32,
 	name: Option<String>,

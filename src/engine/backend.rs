@@ -112,6 +112,10 @@ impl AudioThreadState {
 			match self.command_channel.pop() {
 				Some(msg) => {
 					match msg {
+						Message::SetSongLength(song_length) => {
+							assert!(self.audiotakes.is_empty() && self.miditakes.is_empty());
+							self.song_length = song_length;
+						}
 						Message::UpdateAudioDevice(id, mut device) => {
 							// FrontendThreadState has verified that audiodev_id isn't currently used by any take
 							if cfg!(debug_assertions) {

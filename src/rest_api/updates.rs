@@ -17,6 +17,8 @@ pub struct UpdateSong {
 	pub song_position: Option<f32>,
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub transport_position: Option<f32>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub loop_length: Option<f32>
 }
 
 #[derive(Serialize, Clone)]

@@ -281,6 +281,9 @@ async function mainloop()
 							console.log("ignoring timestamp which likely is stale");
 						}
 					}
+					if (update.action.song.loop_length !== undefined) {
+						app2.loop_length = update.action.song.loop_length;
+					}
 				}
 			}
 		}

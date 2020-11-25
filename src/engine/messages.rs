@@ -4,6 +4,7 @@ use super::takes::{AudioTakeNode,MidiTakeNode};
 
 #[derive(Debug)]
 pub enum Message {
+	SetSongLength(u32),
 	UpdateAudioDevice(usize, Option<AudioDevice>),
 	UpdateMidiDevice(usize, Option<MidiDevice>),
 	NewAudioTake(Box<AudioTakeNode>),
