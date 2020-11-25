@@ -150,7 +150,7 @@ body {
     <div id="app">
 		<div>
 		<button v-on:click="add_synth_clicked">Add synth</button>
-		Time: {{ playback_time.toFixed(2) }}
+		Time: {{ playback_time.toFixed(2) }}, LoopLength: {{ loop_length }}
 		</div>
 		<div>
 		<synth v-for="synth in synths" v-bind:model="synth" v-bind:id="synth.id" v-bind:name="synth.name" v-bind:chains="synth.chains"> </synth>

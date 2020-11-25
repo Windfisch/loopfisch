@@ -51,6 +51,7 @@ fn not_found(req: &rocket::Request) -> String {
 }
 
 pub async fn launch_server(engine: FrontendThreadState, event_channel_: realtime_send_queue::Consumer<Event>) {
+	let sample_rate = engine.sample_rate();
 	let update_list = Arc::new(UpdateList::new());
 	let state = Arc::new( GuiState {
 		update_list: update_list.clone(),
@@ -95,12 +96,13 @@ pub async fn launch_server(engine: FrontendThreadState, event_channel_: realtime
 				}
 				Event::Timestamp(song_position, transport_position) =>
 				{
-					state2.update_list.push(UpdateContent::Timestamps(
-						Timestamps {
-							song_position: song_position as f32 / 44100.0,
-							transport_position: transport_position as f32 / 44100.0,
-						}
-					)).await;
+					state2.update_list.push(UpdateRoot {
+						synths: None,
+						song: Some(UpdateSong {
+							song_position: Some(song_position as f32 / sample_rate as f32),
+							transport_position: Some(transport_position as f32 / sample_rate as f32),
+						})
+					}).await;
 				}
 				Event::Kill =>
 				{

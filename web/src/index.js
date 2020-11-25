@@ -272,12 +272,14 @@ async function mainloop()
 						console.log(e);
 					}
 				}
-				if (update.action.song_position !== undefined) { // only update the time when the answer was really polled.
-					if (duration >= 0.1) {
-						app2.playback_time_offset = update.action.song_position - now();
-					}
-					else {
-						console.log("ignoring timestamp which likely is stale");
+				if (update.action.song !== undefined) {
+					if (update.action.song.song_position !== undefined) { // only update the time when the answer was really polled.
+						if (duration >= 0.1) {
+							app2.playback_time_offset = update.action.song.song_position - now();
+						}
+						else {
+							console.log("ignoring timestamp which likely is stale");
+						}
 					}
 				}
 			}
