@@ -10,7 +10,7 @@ module.exports = {
 	methods: {
 		set_or_edit() {
 			if (this.bpm_editing) {
-				this.$emit("input", { bpm: this.bpm, beats: this.beats });
+				this.$emit("input", { bpm: parseFloat(this.bpm), beats: parseInt(this.beats) });
 			}
 			this.bpm_editing = !this.bpm_editing
 			console.log(this.bpm_editing);
