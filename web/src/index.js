@@ -202,7 +202,8 @@ var app2 = new Vue({
 				redirect: 'follow',
 				mode: 'cors',
 				body: JSON.stringify({
-					"loop_length": 60 * this.loop_settings.beats / this.loop_settings.bpm
+					"loop_length": 60 * this.loop_settings.beats / this.loop_settings.bpm,
+					"beats": this.loop_settings.beats
 				})
 			});
 		},

@@ -81,10 +81,10 @@ impl FrontendThreadState {
 		self.shared.song_length.load(std::sync::atomic::Ordering::Relaxed)
 	}
 
-	pub fn set_loop_length(&mut self, loop_length_samples: u32) -> Result<(),()> {
+	pub fn set_loop_length(&mut self, loop_length_samples: u32, n_beats: u32) -> Result<(),()> {
 		// FIXME TODO: keep track if takes exist, refuse to set the loop length in that case
 		// FIXME TODO: reject song lengths that are smaller than the maximum latency.
-		self.command_channel.send_message(Message::SetSongLength(loop_length_samples))?;
+		self.command_channel.send_message(Message::SetSongLength(loop_length_samples, n_beats))?;
 		Ok(())
 	}
 

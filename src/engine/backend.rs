@@ -25,6 +25,7 @@ pub struct AudioThreadState {
 	transport_position: u32, // does not wrap 
 	song_position: u32, // wraps
 	song_length: u32,
+	n_beats: u32,
 	shared: Arc<SharedThreadState>,
 	event_channel: realtime_send_queue::Producer<Event>,
 	destructor_thread_handle: std::thread::JoinHandle<()>,
@@ -68,6 +69,7 @@ impl AudioThreadState {
 			transport_position: 0,
 			song_position: 0,
 			song_length,
+			n_beats: 4,
 			shared,
 			event_channel,
 			destructor_thread_handle,
@@ -79,7 +81,7 @@ impl AudioThreadState {
 		assert_no_alloc(||{
 			assert!(scope.n_frames() < self.song_length);
 
-			self.metronome.process(self.song_position, self.song_length / 8, 4, scope);
+			self.metronome.process(self.song_position, self.song_length / self.n_beats, self.n_beats, scope);
 
 			self.process_command_channel();
 
@@ -112,9 +114,10 @@ impl AudioThreadState {
 			match self.command_channel.pop() {
 				Some(msg) => {
 					match msg {
-						Message::SetSongLength(song_length) => {
+						Message::SetSongLength(song_length, n_beats) => {
 							assert!(self.audiotakes.is_empty() && self.miditakes.is_empty());
 							self.song_length = song_length;
+							self.n_beats = n_beats;
 						}
 						Message::UpdateAudioDevice(id, mut device) => {
 							// FrontendThreadState has verified that audiodev_id isn't currently used by any take
