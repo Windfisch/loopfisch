@@ -2,6 +2,7 @@ import pie from './pie.vue';
 import take from './take.vue';
 import chain from './chain.vue';
 import synth from './synth.vue';
+import bpm from './bpm.vue';
 import Vue from 'vue';
 import axios from 'axios';
 
@@ -9,13 +10,18 @@ Vue.component('pie', pie);
 Vue.component("take", take);
 Vue.component("chain", chain);
 Vue.component("synth", synth);
+Vue.component("bpm", bpm);
 
 var app2 = new Vue({
 	el: '#app',
-	data: {
+	data: function(){ return{
 		playback_time: 0,
 		message: "Hello World",
 		count: 0,
+		loop_settings: {
+			bpm: 126,
+			beats:8,
+		},
 		user_id: "<not registered yet>",
 		synths: [
 			{
@@ -184,8 +190,12 @@ var app2 = new Vue({
 				]
 			}
 		]
-	},
+	}},
 	methods: {
+		async bpm_beats_changed() {
+			console.log("bpms / beats have changed");
+			console.log(this.loop_settings);
+		},
 		async add_synth_clicked() {
 			var post = await fetch("http://localhost:8000/api/synths", {
 				method: 'POST',
@@ -215,7 +225,6 @@ var app2 = new Vue({
 			else {
 				alert("Failed to create synth!");
 			}
-
 		}
 	}
 })
