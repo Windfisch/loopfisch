@@ -195,6 +195,16 @@ var app2 = new Vue({
 		async bpm_beats_changed() {
 			console.log("bpms / beats have changed");
 			console.log(this.loop_settings);
+
+			var patch = await fetch("http://localhost:8000/api/song", {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				redirect: 'follow',
+				mode: 'cors',
+				body: JSON.stringify({
+					"loop_length": 60 * this.loop_settings.beats / this.loop_settings.bpm
+				})
+			});
 		},
 		async add_synth_clicked() {
 			var post = await fetch("http://localhost:8000/api/synths", {
