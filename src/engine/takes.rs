@@ -230,7 +230,7 @@ impl MidiTake {
 		}
 
 		for mut data in registry.active_notes() {
-			data[0] = 0x80 | (0x3f & data[0]); // turn the note-on that was returned into a note-off
+			data[0] = 0x80 | (0x0f & data[0]); // turn the note-on that was returned into a note-off
 			data[2] = 64;
 			self.events.push( MidiMessage {
 				timestamp: self.duration-1,
