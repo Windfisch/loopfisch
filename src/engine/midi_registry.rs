@@ -57,7 +57,7 @@ impl MidiNoteRegistry {
 		for channel in 0..16 {
 			for note in 0..128 {
 				let velocity = self.playing_notes[channel as usize][note as usize];
-				if velocity == 0 {
+				if velocity != 0 {
 					device.queue_event( MidiMessage {
 						timestamp: 0,
 						data: [0x80 | channel, note, 64]
