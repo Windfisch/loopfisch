@@ -233,7 +233,7 @@ impl MidiTake {
 			data[0] = 0x80 | (0x3f & data[0]); // turn the note-on that was returned into a note-off
 			data[2] = 64;
 			self.events.push( MidiMessage {
-				timestamp: 0,
+				timestamp: self.duration-1,
 				data
 			});
 		}
