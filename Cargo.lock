@@ -602,6 +602,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "gen-iter"
+version = "0.2.0"
+source = "git+https://github.com/Windfisch/gen-iter#87fdc2684c978b2598c555dee2b82fd04000d1f6"
+
+[[package]]
 name = "generic-array"
 version = "0.14.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -905,6 +910,7 @@ dependencies = [
  "async-std",
  "crossterm",
  "eventfd",
+ "gen-iter",
  "intrusive-collections",
  "jack",
  "ringbuf",

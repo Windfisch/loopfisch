@@ -123,8 +123,11 @@ impl MidiTake {
 	pub fn playback(&mut self, device: &mut MidiDevice, range_u32: std::ops::Range<u32>) {
 		let range = range_u32.start as usize .. range_u32.end as usize;
 		if self.unmuted != self.unmuted_old {
-			if !self.unmuted {
-				self.note_registry.borrow_mut().stop_playing(device);
+			if self.unmuted {
+				self.note_registry.borrow_mut().send_noteons(device);
+			}
+			else {
+				self.note_registry.borrow_mut().send_noteoffs(device);
 			}
 			self.unmuted_old = self.unmuted;
 		}
@@ -154,8 +157,8 @@ impl MidiTake {
 							data: event.data
 						}
 					).unwrap();
-					note_registry.register_event(event.data);
 				}
+				note_registry.register_event(event.data);
 
 				return true; // signify "please continue the loop"
 			});
@@ -188,6 +191,52 @@ impl MidiTake {
 	pub fn rewind(&mut self) {
 		self.current_position = 0;
 		self.events.rewind();
+	}
+
+	pub fn start_recording(&mut self, scope: &jack::ProcessScope, device: &MidiDevice, range_u32: std::ops::Range<u32>) {
+		use std::convert::TryInto;
+		let range = range_u32.start as usize .. range_u32.end as usize;
+		
+		let mut registry = device.clone_registry();
+		for event in device.in_port.iter(scope) {
+			if range.contains(&(event.time as usize)) {
+				if event.bytes.len() == 3 {
+					let data: [u8;3] = event.bytes.try_into().unwrap();
+					registry.register_event(data);
+				}
+			}
+		}
+
+		for data in registry.active_notes() {
+			self.events.push( MidiMessage {
+				timestamp: 0,
+				data
+			});
+		}
+	}
+
+	pub fn finish_recording(&mut self, scope: &jack::ProcessScope, device: &MidiDevice, range_u32: std::ops::Range<u32>) {
+		use std::convert::TryInto;
+		let range = range_u32.start as usize .. range_u32.end as usize;
+		
+		let mut registry = device.clone_registry();
+		for event in device.in_port.iter(scope) {
+			if range.contains(&(event.time as usize)) {
+				if event.bytes.len() == 3 {
+					let data: [u8;3] = event.bytes.try_into().unwrap();
+					registry.register_event(data);
+				}
+			}
+		}
+
+		for mut data in registry.active_notes() {
+			data[0] = 0x80 | (0x3f & data[0]); // turn the note-on that was returned into a note-off
+			data[2] = 64;
+			self.events.push( MidiMessage {
+				timestamp: 0,
+				data
+			});
+		}
 	}
 
 	pub fn record(&mut self, scope: &jack::ProcessScope, device: &MidiDevice, range_u32: std::ops::Range<u32>) {

@@ -14,10 +14,10 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #![feature(proc_macro_hygiene)]
+#![feature(generators)]
 
 mod engine;
 mod midi_message;
-mod bit_array;
 mod outsourced_allocation_buffer;
 mod id_generator;
 mod rest_api;

@@ -319,6 +319,7 @@ impl AudioThreadState {
 
 				if song_wraps {
 					println!("\nFinished recording on device {}", t.mididev_id);
+					t.finish_recording(scope, dev, 0..song_wraps_at);
 					self.event_channel.send_or_complain(Event::MidiTakeStateChanged(t.mididev_id, t.id, RecordState::Finished));
 					t.record_state = Finished;
 				}
@@ -329,11 +330,18 @@ impl AudioThreadState {
 					self.event_channel.send_or_complain(Event::MidiTakeStateChanged(t.mididev_id, t.id, RecordState::Recording));
 					t.record_state = Recording;
 					t.started_recording_at = self.transport_position + song_wraps_at;
+					t.start_recording(scope, dev, 0..song_wraps_at);
 					t.record(scope, dev, song_wraps_at..scope.n_frames());
 				}
 			}
 
 			cursor.move_next();
+		}
+
+		for dev_opt in self.mididevices.iter_mut() {
+			if let Some(dev) = dev_opt {
+				dev.update_registry(scope);
+			}
 		}
 	}
 }
