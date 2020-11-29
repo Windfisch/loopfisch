@@ -8,6 +8,7 @@ mod backend;
 mod jack_driver;
 mod metronome;
 mod midi_registry;
+mod midiclock;
 
 use backend::*;
 
@@ -28,9 +29,10 @@ use crate::id_generator::IdGenerator;
 use jack_driver::*;
 
 use metronome::AudioMetronome;
+use midiclock::MidiClock;
 use crate::realtime_send_queue;
 
-pub fn create_thread_states(client: jack::Client, devices: Vec<AudioDevice>, mididevices: Vec<MidiDevice>, metronome: AudioMetronome, song_length: u32) -> (FrontendThreadState, realtime_send_queue::Consumer<Event>) {
+pub fn create_thread_states(client: jack::Client, devices: Vec<AudioDevice>, mididevices: Vec<MidiDevice>, song_length: u32) -> (FrontendThreadState, realtime_send_queue::Consumer<Event>) {
 	let shared = Arc::new(SharedThreadState {
 		song_length: AtomicU32::new(song_length),
 		song_position: AtomicU32::new(0),
@@ -44,7 +46,10 @@ pub fn create_thread_states(client: jack::Client, devices: Vec<AudioDevice>, mid
 
 	let (event_producer, event_consumer) = realtime_send_queue::new(64);
 
-	let mut audio_thread_state = AudioThreadState::new(devices, mididevices, metronome, command_receiver, song_length, shared.clone(), event_producer);
+	let metronome = AudioMetronome::new(&client).unwrap();
+	let midiclock = MidiClock::new(&client).unwrap();
+
+	let mut audio_thread_state = AudioThreadState::new(devices, mididevices, metronome, midiclock, command_receiver, song_length, shared.clone(), event_producer);
 
 	let process_callback = move |client: &jack::Client, ps: &jack::ProcessScope| -> jack::Control {
 		audio_thread_state.process_callback(client, ps)
@@ -71,10 +76,8 @@ pub fn launch(loop_length_msec: u32) -> (FrontendThreadState, realtime_send_queu
 
 	println!("JACK running with sampling rate {} Hz, buffer size = {} samples", client.sample_rate(), client.buffer_size());
 
-	let metronome = AudioMetronome::new(&client).unwrap();
-
 	let loop_length = client.sample_rate() as u32 * loop_length_msec / 1000;
-	let (frontend_thread_state, event_queue) = create_thread_states(client, vec![], vec![], metronome, loop_length);
+	let (frontend_thread_state, event_queue) = create_thread_states(client, vec![], vec![], loop_length);
 
 	return (frontend_thread_state, event_queue);
 }

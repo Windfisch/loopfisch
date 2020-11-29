@@ -10,6 +10,7 @@ use std::sync::Arc;
 use super::jack_driver::*;
 
 use super::metronome::AudioMetronome;
+use super::midiclock::MidiClock;
 
 
 use assert_no_alloc::assert_no_alloc;
@@ -19,6 +20,7 @@ pub struct AudioThreadState {
 	devices: Vec<Option<AudioDevice>>,
 	mididevices: Vec<Option<MidiDevice>>,
 	metronome: AudioMetronome,
+	midiclock: MidiClock,
 	audiotakes: LinkedList<AudioTakeAdapter>,
 	miditakes: LinkedList<MidiTakeAdapter>,
 	command_channel: ringbuf::Consumer<Message>,
@@ -42,7 +44,7 @@ impl Drop for AudioThreadState {
 
 impl AudioThreadState {
 	// FIXME this function signature sucks
-	pub fn new(audiodevices: Vec<AudioDevice>, mididevices: Vec<MidiDevice>, metronome: AudioMetronome, command_channel: ringbuf::Consumer<Message>, song_length: u32, shared: Arc<SharedThreadState>, event_channel: realtime_send_queue::Producer<Event>) -> AudioThreadState
+	pub fn new(audiodevices: Vec<AudioDevice>, mididevices: Vec<MidiDevice>, metronome: AudioMetronome, midiclock: MidiClock, command_channel: ringbuf::Consumer<Message>, song_length: u32, shared: Arc<SharedThreadState>, event_channel: realtime_send_queue::Producer<Event>) -> AudioThreadState
 	{
 		let (destruction_sender, mut destruction_receiver) = ringbuf::RingBuffer::<DestructionRequest>::new(32).split();
 		let destructor_thread_handle = std::thread::spawn(move || {
@@ -63,6 +65,7 @@ impl AudioThreadState {
 			devices: pad_option_vec(audiodevices, 32),
 			mididevices: pad_option_vec(mididevices, 32),
 			metronome,
+			midiclock,
 			audiotakes: LinkedList::new(AudioTakeAdapter::new()),
 			miditakes: LinkedList::new(MidiTakeAdapter::new()),
 			command_channel,
@@ -82,6 +85,7 @@ impl AudioThreadState {
 			assert!(scope.n_frames() < self.song_length);
 
 			self.metronome.process(self.song_position, self.song_length / self.n_beats, self.n_beats, scope);
+			self.midiclock.process(self.song_position, self.song_length / self.n_beats, scope);
 
 			self.process_command_channel();
 
