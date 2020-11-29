@@ -16,7 +16,10 @@ impl MidiClock {
 	pub fn process(&mut self, position: u32, period_per_beat: u32, scope: &jack::ProcessScope) {
 		let latency = self.out_port.get_latency_range(jack::LatencyType::Playback).1;
 		let period_per_clock = period_per_beat / 24;
-		let time_since_last_beat = (position + latency) % period_per_clock;
+		let mut time_since_last_beat = (position + latency) % period_per_clock;
+		if time_since_last_beat == 0 {
+			time_since_last_beat = period_per_clock;
+		}
 		let mut writer = self.out_port.writer(scope);
 		for timestamp in ((period_per_clock - time_since_last_beat)..scope.n_frames()).step_by(period_per_clock as usize) {
 			writer.write(&jack::RawMidi {
