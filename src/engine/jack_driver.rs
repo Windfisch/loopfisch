@@ -154,36 +154,67 @@ pub struct MidiDeviceInfo {
 	pub name: String
 }
 
-impl AudioDevice {
-	pub fn info(&self) -> AudioDeviceInfo {
+pub trait AudioDeviceTrait<'a> {
+	type SliceIter: Iterator<Item = &'a [f32]>;
+	type MutSliceIter: Iterator<Item = &'a mut [f32]>;
+	fn info(&self) -> AudioDeviceInfo;
+	fn playback_latency(&self) -> u32;
+	fn capture_latency(&self) -> u32;
+	fn playback_buffers(&'a mut self, scope: &'a jack::ProcessScope) -> Self::MutSliceIter;
+	fn record_buffers(&'a self, scope: &'a jack::ProcessScope) -> Self::SliceIter;
+}
+
+pub struct MySliceIter<'a>(&'a jack::ProcessScope, std::slice::Iter<'a, AudioChannel>);
+impl<'a> Iterator for MySliceIter<'a> {
+	type Item = &'a [f32];
+	fn next(&mut self) -> Option<Self::Item> {
+		self.1.next().map(|channel| channel.in_port.as_slice(self.0))
+	}
+}
+
+pub struct MyOtherSliceIter<'a>(&'a jack::ProcessScope, std::slice::IterMut<'a, AudioChannel>);
+impl<'a> Iterator for MyOtherSliceIter<'a> {
+	type Item = &'a mut [f32];
+	fn next(&mut self) -> Option<Self::Item> {
+		self.1.next().map(|channel| channel.out_port.as_mut_slice(self.0))
+	}
+}
+
+impl<'a> AudioDeviceTrait<'a> for AudioDevice {
+	type SliceIter = MySliceIter<'a>;
+	type MutSliceIter = MyOtherSliceIter<'a>;
+
+	fn info(&self) -> AudioDeviceInfo {
 		return AudioDeviceInfo {
 			n_channels: self.channels.len(),
 			name: self.name.clone()
 		};
 	}
 
+	fn playback_latency(&self) -> u32 {
+		self.channels[0].out_port.get_latency_range(jack::LatencyType::Playback).1
+	}
+
+	fn capture_latency(&self) -> u32 {
+		self.channels[0].in_port.get_latency_range(jack::LatencyType::Capture).1
+	}
+
+	fn playback_buffers(&'a mut self, scope: &'a jack::ProcessScope) -> Self::MutSliceIter {
+		MyOtherSliceIter(scope, self.channels.iter_mut())
+	}
+
+	fn record_buffers(&'a self, scope: &'a jack::ProcessScope) -> Self::SliceIter {
+		MySliceIter(scope, self.channels.iter())
+	}
+}
+
+impl AudioDevice {
 	pub fn new(client: &jack::Client, n_channels: u32, name: &str) -> Result<AudioDevice, jack::Error> {
 		let dev = AudioDevice {
 			channels: (0..n_channels).map(|channel| AudioChannel::new(client, name, channel+1)).collect::<Result<_,_>>()?,
 			name: name.into()
 		};
 		Ok(dev)
-	}
-
-	pub fn playback_latency(&self) -> u32 {
-		self.channels[0].out_port.get_latency_range(jack::LatencyType::Playback).1
-	}
-
-	pub fn capture_latency(&self) -> u32 {
-		self.channels[0].in_port.get_latency_range(jack::LatencyType::Capture).1
-	}
-
-	pub fn playback_buffers<'a>(&'a mut self, scope: &'a jack::ProcessScope) -> impl Iterator<Item = &'a mut [f32]> + 'a {
-		self.channels.iter_mut().map(move |channel| channel.out_port.as_mut_slice(scope))
-	}
-
-	pub fn record_buffers<'a>(&'a self, scope: &'a jack::ProcessScope) -> impl Iterator<Item = &'a [f32]> + 'a {
-		self.channels.iter().map(move |channel| channel.in_port.as_slice(scope))
 	}
 }
 
