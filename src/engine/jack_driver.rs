@@ -20,24 +20,41 @@ impl std::fmt::Debug for MidiDevice {
 	}
 }
 
-pub trait TimestampedMidiEvent {
+pub trait TimestampedMidiEvent<'a> {
 	fn time(&self) -> u32;
 	fn bytes(&self) -> &[u8];
 }
 
-impl TimestampedMidiEvent for jack::RawMidi<'_> {
+impl<'a> TimestampedMidiEvent<'a> for jack::RawMidi<'a> {
 	fn time(&self) -> u32 { self.time }
 	fn bytes(&self) -> &[u8] { self.bytes }
 }
 
-impl MidiDevice {
-	pub fn incoming_events<'a>(&'a self, scope: &'a jack::ProcessScope) -> impl Iterator<Item=impl TimestampedMidiEvent + 'a> + 'a {
+pub trait MidiDeviceTrait<'a> {
+	type Event: TimestampedMidiEvent<'a>;
+	type EventIterator: Iterator<Item=Self::Event>;
+
+	fn incoming_events(&'a self, scope: &'a jack::ProcessScope) -> Self::EventIterator;
+	fn commit_out_buffer(&mut self, scope: &jack::ProcessScope);
+	fn queue_event(&mut self, msg: MidiMessage) -> Result<(), ()>;
+	fn update_registry(&mut self, scope: &jack::ProcessScope);
+	fn clone_registry(&self) -> super::midi_registry::MidiNoteRegistry;
+	fn info(&self) -> MidiDeviceInfo;
+	fn playback_latency(&self) -> u32;
+	fn capture_latency(&self) -> u32;
+}
+
+impl<'a> MidiDeviceTrait<'a> for MidiDevice {
+	type Event = jack::RawMidi<'a>;
+	type EventIterator = jack::MidiIter<'a>;
+
+	fn incoming_events(&'a self, scope: &'a jack::ProcessScope) -> Self::EventIterator {
 		self.in_port.iter(scope)
 	}
 
 	/// sorts the events in the out_buffer, commits them to the out_port and clears the out_buffer.
 	/// FIXME: deduping
-	pub fn commit_out_buffer(&mut self, scope: &jack::ProcessScope) {
+	fn commit_out_buffer(&mut self, scope: &jack::ProcessScope) {
 		// sort
 		self.out_buffer.sort_unstable_by( |a,b| a.0.timestamp.cmp(&b.0.timestamp).then(a.1.cmp(&b.1)) );
 
@@ -54,7 +71,7 @@ impl MidiDevice {
 		// clear
 		self.out_buffer.clear();
 	}
-	pub fn queue_event(&mut self, msg: MidiMessage) -> Result<(), ()> {
+	fn queue_event(&mut self, msg: MidiMessage) -> Result<(), ()> {
 		if self.out_buffer.len() < self.out_buffer.inline_size() {
 			self.out_buffer.push((msg, self.out_buffer.len()));
 			Ok(())
@@ -64,7 +81,7 @@ impl MidiDevice {
 		}
 	}
 
-	pub fn update_registry(&mut self, scope: &jack::ProcessScope) {
+	fn update_registry(&mut self, scope: &jack::ProcessScope) {
 		use std::convert::TryInto;
 		for event in self.in_port.iter(scope) {
 			if event.bytes.len() == 3 {
@@ -74,10 +91,26 @@ impl MidiDevice {
 		}
 	}
 
-	pub fn clone_registry(&self) -> super::midi_registry::MidiNoteRegistry {
+	fn clone_registry(&self) -> super::midi_registry::MidiNoteRegistry {
 		self.registry.clone()
 	}
 	
+	fn info(&self) -> MidiDeviceInfo {
+		MidiDeviceInfo {
+			name: self.name.clone()
+		}
+	}
+
+	fn playback_latency(&self) -> u32 {
+		self.out_port.get_latency_range(jack::LatencyType::Playback).1
+	}
+
+	fn capture_latency(&self) -> u32 {
+		self.in_port.get_latency_range(jack::LatencyType::Capture).1
+	}
+}
+
+impl MidiDevice {
 	pub fn new(client: &jack::Client, name: &str) -> Result<MidiDevice, jack::Error> {
 		let in_port = client.register_port(&format!("{}_in", name), jack::MidiIn::default())?;
 		let out_port = client.register_port(&format!("{}_out", name), jack::MidiOut::default())?;
@@ -89,20 +122,6 @@ impl MidiDevice {
 			name: name.into()
 		};
 		Ok(dev)
-	}
-
-	pub fn info(&self) -> MidiDeviceInfo {
-		MidiDeviceInfo {
-			name: self.name.clone()
-		}
-	}
-
-	pub fn playback_latency(&self) -> u32 {
-		self.out_port.get_latency_range(jack::LatencyType::Playback).1
-	}
-
-	pub fn capture_latency(&self) -> u32 {
-		self.in_port.get_latency_range(jack::LatencyType::Capture).1
 	}
 }
 

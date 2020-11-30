@@ -1,5 +1,5 @@
 use crate::midi_message::*;
-use super::jack_driver::MidiDevice;
+use super::jack_driver::MidiDeviceTrait;
 
 #[derive(Clone)]
 pub struct MidiNoteRegistry {
@@ -38,7 +38,7 @@ impl MidiNoteRegistry {
 		})
 	}
 
-	pub fn send_noteons(&mut self, device: &mut MidiDevice) {
+	pub fn send_noteons<'a>(&mut self, device: &mut impl MidiDeviceTrait<'a>) {
 		// FIXME: queue_event could fail; better allow for a "second chance"
 		for channel in 0..16 {
 			for note in 0..128 {
@@ -52,7 +52,7 @@ impl MidiNoteRegistry {
 			}
 		}
 	}
-	pub fn send_noteoffs(&mut self, device: &mut MidiDevice) {
+	pub fn send_noteoffs<'a>(&mut self, device: &mut impl MidiDeviceTrait<'a>) {
 		// FIXME: queue_event could fail; better allow for a "second chance"
 		for channel in 0..16 {
 			for note in 0..128 {
