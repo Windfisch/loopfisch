@@ -198,10 +198,10 @@ impl MidiTake {
 		let range = range_u32.start as usize .. range_u32.end as usize;
 		
 		let mut registry = device.clone_registry();
-		for event in device.in_port.iter(scope) {
-			if range.contains(&(event.time as usize)) {
-				if event.bytes.len() == 3 {
-					let data: [u8;3] = event.bytes.try_into().unwrap();
+		for event in device.incoming_events(scope) {
+			if range.contains(&(event.time() as usize)) {
+				if event.bytes().len() == 3 {
+					let data: [u8;3] = event.bytes().try_into().unwrap();
 					registry.register_event(data);
 				}
 			}
@@ -220,10 +220,10 @@ impl MidiTake {
 		let range = range_u32.start as usize .. range_u32.end as usize;
 		
 		let mut registry = device.clone_registry();
-		for event in device.in_port.iter(scope) {
-			if range.contains(&(event.time as usize)) {
-				if event.bytes.len() == 3 {
-					let data: [u8;3] = event.bytes.try_into().unwrap();
+		for event in device.incoming_events(scope) {
+			if range.contains(&(event.time() as usize)) {
+				if event.bytes().len() == 3 {
+					let data: [u8;3] = event.bytes().try_into().unwrap();
 					registry.register_event(data);
 				}
 			}
@@ -242,15 +242,15 @@ impl MidiTake {
 	pub fn record(&mut self, scope: &jack::ProcessScope, device: &MidiDevice, range_u32: std::ops::Range<u32>) {
 		use std::convert::TryInto;
 		let range = range_u32.start as usize .. range_u32.end as usize;
-		for event in device.in_port.iter(scope) {
-			if range.contains(&(event.time as usize)) {
-				if event.bytes.len() != 3 {
+		for event in device.incoming_events(scope) {
+			if range.contains(&(event.time() as usize)) {
+				if event.bytes().len() != 3 {
 					// FIXME
 					println!("ignoring event with length != 3");
 				}
 				else {
-					let data: [u8;3] = event.bytes.try_into().unwrap();
-					let timestamp = event.time - range.start as u32 + self.duration;
+					let data: [u8;3] = event.bytes().try_into().unwrap();
+					let timestamp = event.time() - range.start as u32 + self.duration;
 					
 					let result = self.events.push( MidiMessage {
 						timestamp,

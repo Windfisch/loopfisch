@@ -3,8 +3,8 @@ use jack;
 use crate::midi_message::MidiMessage;
 
 pub struct MidiDevice {
-	pub in_port: jack::Port<jack::MidiIn>, // FIXME: these should not be public. there should be
-	pub out_port: jack::Port<jack::MidiOut>, // an abstraction layer around the jack driver.
+	in_port: jack::Port<jack::MidiIn>, // FIXME: these should not be public. there should be
+	out_port: jack::Port<jack::MidiOut>, // an abstraction layer around the jack driver.
 
 	out_buffer: smallvec::SmallVec<[(MidiMessage, usize); 128]>,
 	registry: super::midi_registry::MidiNoteRegistry, // FIXME this belongs in the engine, not the driver
@@ -20,7 +20,21 @@ impl std::fmt::Debug for MidiDevice {
 	}
 }
 
+pub trait TimestampedMidiEvent {
+	fn time(&self) -> u32;
+	fn bytes(&self) -> &[u8];
+}
+
+impl TimestampedMidiEvent for jack::RawMidi<'_> {
+	fn time(&self) -> u32 { self.time }
+	fn bytes(&self) -> &[u8] { self.bytes }
+}
+
 impl MidiDevice {
+	pub fn incoming_events<'a>(&'a self, scope: &'a jack::ProcessScope) -> impl Iterator<Item=impl TimestampedMidiEvent + 'a> + 'a {
+		self.in_port.iter(scope)
+	}
+
 	/// sorts the events in the out_buffer, commits them to the out_port and clears the out_buffer.
 	/// FIXME: deduping
 	pub fn commit_out_buffer(&mut self, scope: &jack::ProcessScope) {
