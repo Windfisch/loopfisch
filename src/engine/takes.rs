@@ -39,7 +39,7 @@ impl std::fmt::Debug for AudioTake {
 }
 
 impl AudioTake {
-	pub fn playback<'a>(&mut self, scope: &'a jack::ProcessScope, device: &'a mut impl AudioDeviceTrait<'a>, range_u32: std::ops::Range<u32>) {
+	pub fn playback<'a, T: AudioDeviceTrait<'a>>(&mut self, scope: &'a T::Scope, device: &'a mut T, range_u32: std::ops::Range<u32>) {
 		let range = range_u32.start as usize .. range_u32.end as usize;
 		for (channel_buffer, channel_slice) in self.samples.iter_mut().zip(device.playback_buffers(scope)) {
 			let buffer = &mut channel_slice[range.clone()];
@@ -68,7 +68,7 @@ impl AudioTake {
 		}
 	}
 
-	pub fn record<'a>(&mut self, scope: &'a jack::ProcessScope, device: &'a impl AudioDeviceTrait<'a>, range_u32: std::ops::Range<u32>) {
+	pub fn record<'a, T: AudioDeviceTrait<'a>>(&mut self, scope: &'a T::Scope, device: &'a T, range_u32: std::ops::Range<u32>) {
 		let range = range_u32.start as usize .. range_u32.end as usize;
 		for (channel_buffer, channel_slice) in self.samples.iter_mut().zip(device.record_buffers(scope)) {
 			let data = &channel_slice[range.clone()];
@@ -193,7 +193,7 @@ impl MidiTake {
 		self.events.rewind();
 	}
 
-	pub fn start_recording<'a>(&mut self, scope: &'a jack::ProcessScope, device: &'a impl MidiDeviceTrait<'a>, range_u32: std::ops::Range<u32>) {
+	pub fn start_recording<'a, T: MidiDeviceTrait<'a>>(&mut self, scope: &'a T::Scope, device: &'a T, range_u32: std::ops::Range<u32>) {
 		use std::convert::TryInto;
 		let range = range_u32.start as usize .. range_u32.end as usize;
 		
@@ -215,7 +215,7 @@ impl MidiTake {
 		}
 	}
 
-	pub fn finish_recording<'a>(&mut self, scope: &'a jack::ProcessScope, device: &'a impl MidiDeviceTrait<'a>, range_u32: std::ops::Range<u32>) {
+	pub fn finish_recording<'a, T: MidiDeviceTrait<'a>>(&mut self, scope: &'a T::Scope, device: &'a T, range_u32: std::ops::Range<u32>) {
 		use std::convert::TryInto;
 		let range = range_u32.start as usize .. range_u32.end as usize;
 		
@@ -239,7 +239,7 @@ impl MidiTake {
 		}
 	}
 
-	pub fn record<'a>(&mut self, scope: &'a jack::ProcessScope, device: &'a impl MidiDeviceTrait<'a>, range_u32: std::ops::Range<u32>) {
+	pub fn record<'a, T: MidiDeviceTrait<'a>>(&mut self, scope: &'a T::Scope, device: &'a T, range_u32: std::ops::Range<u32>) {
 		use std::convert::TryInto;
 		let range = range_u32.start as usize .. range_u32.end as usize;
 		for event in device.incoming_events(scope) {

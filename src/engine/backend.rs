@@ -346,7 +346,7 @@ impl AudioThreadState {
 	}
 }
 
-fn play_silence<'a, T: AudioDeviceTrait<'a>>(scope: &'a jack::ProcessScope, device: &'a mut T, range_u32: std::ops::Range<u32>) {
+fn play_silence<'a, T: AudioDeviceTrait<'a>>(scope: &'a T::Scope, device: &'a mut T, range_u32: std::ops::Range<u32>) {
 	let range = range_u32.start as usize .. range_u32.end as usize;
 	for channel_slice in device.playback_buffers(scope) {
 		let buffer = &mut channel_slice[range.clone()];
