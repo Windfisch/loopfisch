@@ -348,8 +348,8 @@ impl AudioThreadState {
 
 fn play_silence(scope: &jack::ProcessScope, device: &mut AudioDevice, range_u32: std::ops::Range<u32>) {
 	let range = range_u32.start as usize .. range_u32.end as usize;
-	for channel_ports in device.channels.iter_mut() {
-		let buffer = &mut channel_ports.out_port.as_mut_slice(scope)[range.clone()];
+	for channel_slice in device.playback_buffers(scope) {
+		let buffer = &mut channel_slice[range.clone()];
 		for d in buffer {
 			*d = 0.0;
 		}

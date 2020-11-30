@@ -122,7 +122,7 @@ impl AudioChannel {
 
 #[derive(Debug)]
 pub struct AudioDevice {
-	pub channels: Vec<AudioChannel>,
+	channels: Vec<AudioChannel>,
 	name: String
 }
 
@@ -157,6 +157,14 @@ impl AudioDevice {
 
 	pub fn capture_latency(&self) -> u32 {
 		self.channels[0].in_port.get_latency_range(jack::LatencyType::Capture).1
+	}
+
+	pub fn playback_buffers<'a>(&'a mut self, scope: &'a jack::ProcessScope) -> impl Iterator<Item = &'a mut [f32]> + 'a {
+		self.channels.iter_mut().map(move |channel| channel.out_port.as_mut_slice(scope))
+	}
+
+	pub fn record_buffers<'a>(&'a self, scope: &'a jack::ProcessScope) -> impl Iterator<Item = &'a [f32]> + 'a {
+		self.channels.iter().map(move |channel| channel.in_port.as_slice(scope))
 	}
 }
 

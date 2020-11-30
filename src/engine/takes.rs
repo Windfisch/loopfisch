@@ -41,8 +41,8 @@ impl std::fmt::Debug for AudioTake {
 impl AudioTake {
 	pub fn playback(&mut self, scope: &jack::ProcessScope, device: &mut AudioDevice, range_u32: std::ops::Range<u32>) {
 		let range = range_u32.start as usize .. range_u32.end as usize;
-		for (channel_buffer, channel_ports) in self.samples.iter_mut().zip(device.channels.iter_mut()) {
-			let buffer = &mut channel_ports.out_port.as_mut_slice(scope)[range.clone()];
+		for (channel_buffer, channel_slice) in self.samples.iter_mut().zip(device.playback_buffers(scope)) {
+			let buffer = &mut channel_slice[range.clone()];
 			for d in buffer {
 				let mut val = channel_buffer.next(|v|*v);
 				if val.is_none() {
@@ -70,8 +70,8 @@ impl AudioTake {
 
 	pub fn record(&mut self, scope: &jack::ProcessScope, device: &AudioDevice, range_u32: std::ops::Range<u32>) {
 		let range = range_u32.start as usize .. range_u32.end as usize;
-		for (channel_buffer, channel_ports) in self.samples.iter_mut().zip(device.channels.iter()) {
-			let data = &channel_ports.in_port.as_slice(scope)[range.clone()];
+		for (channel_buffer, channel_slice) in self.samples.iter_mut().zip(device.record_buffers(scope)) {
+			let data = &channel_slice[range.clone()];
 			for d in data {
 				let err = channel_buffer.push(*d).is_err();
 				if err {
