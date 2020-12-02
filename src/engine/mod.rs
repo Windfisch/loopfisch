@@ -9,6 +9,7 @@ mod jack_driver;
 mod metronome;
 mod midi_registry;
 mod midiclock;
+mod driver_traits;
 
 use backend::*;
 
@@ -25,6 +26,7 @@ use retry_channel::*;
 use std::sync::atomic::*;
 use std::sync::Arc;
 use crate::id_generator::IdGenerator;
+use driver_traits::*;
 
 use jack_driver::*;
 

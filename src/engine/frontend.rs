@@ -3,6 +3,7 @@ use super::data::RecordState;
 use super::takes::{MidiTake,MidiTakeNode,AudioTake,AudioTakeNode};
 use super::retry_channel::RetryChannelPush;
 use super::messages::Message;
+use super::driver_traits::*;
 use std::sync::Arc;
 use std::cell::RefCell;
 use std::collections::HashMap;

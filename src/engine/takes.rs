@@ -5,7 +5,7 @@ use std::cell::RefCell;
 
 use crate::midi_message::MidiMessage;
 
-use super::jack_driver::*;
+use super::driver_traits::*;
 
 use super::midi_registry::MidiNoteRegistry;
 

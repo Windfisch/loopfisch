@@ -1,5 +1,5 @@
 use crate::midi_message::*;
-use super::jack_driver::MidiDeviceTrait;
+use super::driver_traits::MidiDeviceTrait;
 
 #[derive(Clone)]
 pub struct MidiNoteRegistry {
