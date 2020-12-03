@@ -85,8 +85,8 @@ impl AudioThreadState {
 		assert_no_alloc(||{
 			assert!(scope.n_frames() < self.song_length);
 
-			self.metronome.process(self.song_position, self.song_length / self.n_beats, self.n_beats, client.sample_rate() as u32, scope);
-			self.midiclock.process(self.song_position, self.song_length / self.n_beats, scope);
+			self.metronome.process(self.song_position, self.song_length, self.n_beats, client.sample_rate() as u32, scope);
+			self.midiclock.process(self.song_position, self.song_length, self.n_beats, scope);
 
 			self.process_command_channel();
 

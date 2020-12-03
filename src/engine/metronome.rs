@@ -7,6 +7,8 @@ pub struct AudioMetronome<T: AudioDeviceTrait> {
 	unmuted: bool
 }
 
+fn ceil_div(a: u32, b: u32) -> u32 { (a+b-1)/b }
+
 impl<T: AudioDeviceTrait> AudioMetronome<T> {
 	pub fn new(device: T) -> AudioMetronome<T> {
 		AudioMetronome {
@@ -16,8 +18,9 @@ impl<T: AudioDeviceTrait> AudioMetronome<T> {
 		}
 	}
 
-	pub fn process(&mut self, position: u32, period: u32, beats: u32, sample_rate: u32, scope: &T::Scope) {
+	pub fn process(&mut self, position: u32, song_length: u32, beats: u32, sample_rate: u32, scope: &T::Scope) {
 		if !self.unmuted { return; }
+		let period = ceil_div(song_length, beats);
 		let latency = self.device.playback_latency();
 		for buffer in self.device.playback_buffers(scope) {
 			for i in 0..scope.n_frames() {
@@ -29,12 +32,11 @@ impl<T: AudioDeviceTrait> AudioMetronome<T> {
 	fn process_one(position: u32, period: u32, beats: u32, sample_rate: u32) -> f32 {
 		let position_in_beat = position % period;
 		let beat = position / period;
-		let emphasis = (beat % beats) == 0;
 
 		let click_length = sample_rate / 10;
 
 		let volume = 1.0 - min(position_in_beat, click_length) as f32 / click_length as f32;
-		let freq = if emphasis { 880 } else { 440 };
+		let freq = if beat == 0 { 880 } else { 440 };
 
 		let sawtooth: f32 = (position_in_beat as f32 / sample_rate as f32 * freq as f32).fract();
 		let square = if sawtooth < 0.5 {0.0} else {1.0};

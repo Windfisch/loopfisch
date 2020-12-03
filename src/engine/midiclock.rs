@@ -12,15 +12,29 @@ impl<T: MidiDeviceTrait> MidiClock<T> {
 		}
 	}
 
-	pub fn process(&mut self, position: u32, period_per_beat: u32, scope: &T::Scope) {
+	pub fn process(&mut self, position_uncompensated: u32, song_length: u32, n_beats: u32, scope: &T::Scope) {
+		let n_frames = scope.n_frames();
 		let latency = self.device.playback_latency();
-		let period_per_clock = period_per_beat / 24;
-		let mut time_since_last_beat = (position + latency) % period_per_clock;
-		if time_since_last_beat == 0 {
-			time_since_last_beat = period_per_clock;
+		let position = (position_uncompensated + latency) % song_length;
+		
+		let song_wraps_at = std::cmp::min(song_length - position, n_frames);
+
+		let n_clocks = n_beats * 24;
+		let period_per_clock = (song_length+n_clocks-1) / n_clocks; // round towards +inf
+
+		let mut time_since_last_clock = position % period_per_clock;
+		if time_since_last_clock == 0 {
+			time_since_last_clock = period_per_clock;
 		}
 
-		for timestamp in ((period_per_clock - time_since_last_beat)..scope.n_frames()).step_by(period_per_clock as usize) {
+		println!("0..{}..{}", song_wraps_at, n_frames);
+		println!("{}..{}..{}", position, position+song_wraps_at, position+n_frames);
+		println!("{} clocks per {} samples -> period per clock: {}", song_length, n_clocks, period_per_clock);
+
+		for timestamp in
+			((period_per_clock - time_since_last_clock)..song_wraps_at).step_by(period_per_clock as usize)
+			.chain( (song_wraps_at..n_frames).step_by(period_per_clock as usize) )
+		{
 			self.device.queue_event(MidiMessage {
 				timestamp,
 				data: [0xF8, 0, 0],
