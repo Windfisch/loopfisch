@@ -24,10 +24,13 @@ Features
 Build instructions
 ------------------
 
-Currently, you need to use the *unstable* Rust toolchain. 
+Currently, you need to use the *unstable* Rust toolchain, version 1.50 or later. 
 You can add a per-directory override using
 
-```rustup override set nightly```
+```
+rustup override set nightly
+rustup update # might or might not be needed
+```
 
 You might need to update rust, for more information, you can refer to
 https://rocket.rs/v0.4/guide/getting-started/.

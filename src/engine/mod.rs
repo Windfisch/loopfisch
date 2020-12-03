@@ -48,8 +48,8 @@ pub fn create_thread_states(client: jack::Client, devices: Vec<AudioDevice>, mid
 
 	let (event_producer, event_consumer) = realtime_send_queue::new(64);
 
-	let metronome = AudioMetronome::new(&client).unwrap();
-	let midiclock = MidiClock::new(&client).unwrap();
+	let metronome = AudioMetronome::new( AudioDevice::new(&client, 1, "metronome").unwrap() );
+	let midiclock = MidiClock::new( MidiDevice::new(&client, "clock").unwrap() );
 
 	let mut audio_thread_state = AudioThreadState::new(devices, mididevices, metronome, midiclock, command_receiver, song_length, shared.clone(), event_producer);
 

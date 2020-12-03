@@ -1,30 +1,28 @@
 use std::cmp::min;
-use jack;
+use super::driver_traits::*;
 
-pub struct AudioMetronome {
-	out_port: jack::Port<jack::AudioOut>,
-	sample_rate: usize,
+pub struct AudioMetronome<T: AudioDeviceTrait> {
+	device: T,
 	volume: f32,
 	unmuted: bool
 }
 
-impl AudioMetronome {
-	pub fn new(client: &jack::Client) -> Result<AudioMetronome, jack::Error> {
-		let out_port = client.register_port("metronome", jack::AudioOut::default())?;
-		Ok(AudioMetronome {
-			out_port,
-			sample_rate: client.sample_rate(),
+impl<T: AudioDeviceTrait> AudioMetronome<T> {
+	pub fn new(device: T) -> AudioMetronome<T> {
+		AudioMetronome {
+			device,
 			volume: 0.3,
 			unmuted: true
-		})
+		}
 	}
 
-	pub fn process(&mut self, position: u32, period: u32, beats: u32, scope: &jack::ProcessScope) {
+	pub fn process(&mut self, position: u32, period: u32, beats: u32, sample_rate: u32, scope: &T::Scope) {
 		if !self.unmuted { return; }
-		let latency = self.out_port.get_latency_range(jack::LatencyType::Playback).1;
-		let buffer = self.out_port.as_mut_slice(scope);
-		for i in 0..scope.n_frames() {
-			buffer[i as usize] = self.volume * Self::process_one(position + i + latency, period, beats, self.sample_rate as u32);
+		let latency = self.device.playback_latency();
+		for buffer in self.device.playback_buffers(scope) {
+			for i in 0..scope.n_frames() {
+				buffer[i as usize] = self.volume * Self::process_one(position + i + latency, period, beats, sample_rate);
+			}
 		}
 	}
 

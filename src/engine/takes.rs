@@ -39,7 +39,7 @@ impl std::fmt::Debug for AudioTake {
 }
 
 impl AudioTake {
-	pub fn playback<'a, T: AudioDeviceTrait<'a>>(&mut self, scope: &'a T::Scope, device: &'a mut T, range_u32: std::ops::Range<u32>) {
+	pub fn playback<'a, T: AudioDeviceTrait>(&mut self, scope: &'a T::Scope, device: &'a mut T, range_u32: std::ops::Range<u32>) {
 		let range = range_u32.start as usize .. range_u32.end as usize;
 		for (channel_buffer, channel_slice) in self.samples.iter_mut().zip(device.playback_buffers(scope)) {
 			let buffer = &mut channel_slice[range.clone()];
@@ -68,7 +68,7 @@ impl AudioTake {
 		}
 	}
 
-	pub fn record<'a, T: AudioDeviceTrait<'a>>(&mut self, scope: &'a T::Scope, device: &'a T, range_u32: std::ops::Range<u32>) {
+	pub fn record<'a, T: AudioDeviceTrait>(&mut self, scope: &'a T::Scope, device: &'a T, range_u32: std::ops::Range<u32>) {
 		let range = range_u32.start as usize .. range_u32.end as usize;
 		for (channel_buffer, channel_slice) in self.samples.iter_mut().zip(device.record_buffers(scope)) {
 			let data = &channel_slice[range.clone()];
@@ -120,7 +120,7 @@ impl MidiTake {
 	/// Enumerates all events that take place in the next `range.len()` frames and puts
 	/// them into device's playback queue. The events are automatically looped every
 	/// `self.duration` frames.
-	pub fn playback<'a>(&mut self, device: &'a mut impl MidiDeviceTrait<'a>, range_u32: std::ops::Range<u32>) {
+	pub fn playback<'a>(&mut self, device: &'a mut impl MidiDeviceTrait, range_u32: std::ops::Range<u32>) {
 		let range = range_u32.start as usize .. range_u32.end as usize;
 		if self.unmuted != self.unmuted_old {
 			if self.unmuted {
@@ -154,7 +154,8 @@ impl MidiTake {
 					device.queue_event(
 						MidiMessage {
 							timestamp: relative_timestamp,
-							data: event.data
+							data: event.data,
+							datalen: event.datalen
 						}
 					).unwrap();
 				}
@@ -193,7 +194,7 @@ impl MidiTake {
 		self.events.rewind();
 	}
 
-	pub fn start_recording<'a, T: MidiDeviceTrait<'a>>(&mut self, scope: &'a T::Scope, device: &'a T, range_u32: std::ops::Range<u32>) {
+	pub fn start_recording<'a, T: MidiDeviceTrait>(&mut self, scope: &'a T::Scope, device: &'a T, range_u32: std::ops::Range<u32>) {
 		use std::convert::TryInto;
 		let range = range_u32.start as usize .. range_u32.end as usize;
 		
@@ -210,12 +211,13 @@ impl MidiTake {
 		for data in registry.active_notes() {
 			self.events.push( MidiMessage {
 				timestamp: 0,
-				data
+				data,
+				datalen: 3
 			});
 		}
 	}
 
-	pub fn finish_recording<'a, T: MidiDeviceTrait<'a>>(&mut self, scope: &'a T::Scope, device: &'a T, range_u32: std::ops::Range<u32>) {
+	pub fn finish_recording<'a, T: MidiDeviceTrait>(&mut self, scope: &'a T::Scope, device: &'a T, range_u32: std::ops::Range<u32>) {
 		use std::convert::TryInto;
 		let range = range_u32.start as usize .. range_u32.end as usize;
 		
@@ -234,12 +236,13 @@ impl MidiTake {
 			data[2] = 64;
 			self.events.push( MidiMessage {
 				timestamp: self.duration-1,
-				data
+				data,
+				datalen: 3
 			});
 		}
 	}
 
-	pub fn record<'a, T: MidiDeviceTrait<'a>>(&mut self, scope: &'a T::Scope, device: &'a T, range_u32: std::ops::Range<u32>) {
+	pub fn record<'a, T: MidiDeviceTrait>(&mut self, scope: &'a T::Scope, device: &'a T, range_u32: std::ops::Range<u32>) {
 		use std::convert::TryInto;
 		let range = range_u32.start as usize .. range_u32.end as usize;
 		for event in device.incoming_events(scope) {
@@ -254,7 +257,8 @@ impl MidiTake {
 					
 					let result = self.events.push( MidiMessage {
 						timestamp,
-						data
+						data,
+						datalen: 3
 					});
 					// TODO: assert that this is monotonic
 

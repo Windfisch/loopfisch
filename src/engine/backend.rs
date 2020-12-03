@@ -20,8 +20,8 @@ use crate::realtime_send_queue;
 pub struct AudioThreadState {
 	devices: Vec<Option<AudioDevice>>,
 	mididevices: Vec<Option<MidiDevice>>,
-	metronome: AudioMetronome,
-	midiclock: MidiClock,
+	metronome: AudioMetronome<AudioDevice>,
+	midiclock: MidiClock<MidiDevice>,
 	audiotakes: LinkedList<AudioTakeAdapter>,
 	miditakes: LinkedList<MidiTakeAdapter>,
 	command_channel: ringbuf::Consumer<Message>,
@@ -45,7 +45,7 @@ impl Drop for AudioThreadState {
 
 impl AudioThreadState {
 	// FIXME this function signature sucks
-	pub fn new(audiodevices: Vec<AudioDevice>, mididevices: Vec<MidiDevice>, metronome: AudioMetronome, midiclock: MidiClock, command_channel: ringbuf::Consumer<Message>, song_length: u32, shared: Arc<SharedThreadState>, event_channel: realtime_send_queue::Producer<Event>) -> AudioThreadState
+	pub fn new(audiodevices: Vec<AudioDevice>, mididevices: Vec<MidiDevice>, metronome: AudioMetronome<AudioDevice>, midiclock: MidiClock<MidiDevice>, command_channel: ringbuf::Consumer<Message>, song_length: u32, shared: Arc<SharedThreadState>, event_channel: realtime_send_queue::Producer<Event>) -> AudioThreadState
 	{
 		let (destruction_sender, mut destruction_receiver) = ringbuf::RingBuffer::<DestructionRequest>::new(32).split();
 		let destructor_thread_handle = std::thread::spawn(move || {
@@ -81,11 +81,11 @@ impl AudioThreadState {
 		}
 	}
 
-	pub fn process_callback(&mut self, _client: &jack::Client, scope: &jack::ProcessScope) -> jack::Control {
+	pub fn process_callback(&mut self, client: &jack::Client, scope: &jack::ProcessScope) -> jack::Control {
 		assert_no_alloc(||{
 			assert!(scope.n_frames() < self.song_length);
 
-			self.metronome.process(self.song_position, self.song_length / self.n_beats, self.n_beats, scope);
+			self.metronome.process(self.song_position, self.song_length / self.n_beats, self.n_beats, client.sample_rate() as u32, scope);
 			self.midiclock.process(self.song_position, self.song_length / self.n_beats, scope);
 
 			self.process_command_channel();
@@ -347,7 +347,7 @@ impl AudioThreadState {
 	}
 }
 
-fn play_silence<'a, T: AudioDeviceTrait<'a>>(scope: &'a T::Scope, device: &'a mut T, range_u32: std::ops::Range<u32>) {
+fn play_silence<'a, T: AudioDeviceTrait>(scope: &'a T::Scope, device: &'a mut T, range_u32: std::ops::Range<u32>) {
 	let range = range_u32.start as usize .. range_u32.end as usize;
 	for channel_slice in device.playback_buffers(scope) {
 		let buffer = &mut channel_slice[range.clone()];

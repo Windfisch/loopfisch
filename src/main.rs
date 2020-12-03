@@ -15,6 +15,8 @@
 
 #![feature(proc_macro_hygiene)]
 #![feature(generators)]
+#![feature(in_band_lifetimes)]
+#![feature(generic_associated_types)]
 
 mod engine;
 mod midi_message;

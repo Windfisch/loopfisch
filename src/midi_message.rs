@@ -1,7 +1,8 @@
 #[derive(Debug)]
 pub struct MidiMessage {
 	pub timestamp: jack::Frames,
-	pub data: [u8; 3]
+	pub data: [u8; 3],
+	pub datalen: u8
 }
 
 pub enum MidiEvent {

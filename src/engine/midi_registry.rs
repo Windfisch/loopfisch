@@ -38,7 +38,7 @@ impl MidiNoteRegistry {
 		})
 	}
 
-	pub fn send_noteons<'a>(&mut self, device: &mut impl MidiDeviceTrait<'a>) {
+	pub fn send_noteons(&mut self, device: &mut impl MidiDeviceTrait) {
 		// FIXME: queue_event could fail; better allow for a "second chance"
 		for channel in 0..16 {
 			for note in 0..128 {
@@ -46,13 +46,14 @@ impl MidiNoteRegistry {
 				if velocity != 0 {
 					device.queue_event( MidiMessage {
 						timestamp: 0,
-						data: [0x90 | channel, note, velocity]
+						data: [0x90 | channel, note, velocity],
+						datalen: 3
 					}).unwrap();
 				}
 			}
 		}
 	}
-	pub fn send_noteoffs<'a>(&mut self, device: &mut impl MidiDeviceTrait<'a>) {
+	pub fn send_noteoffs(&mut self, device: &mut impl MidiDeviceTrait) {
 		// FIXME: queue_event could fail; better allow for a "second chance"
 		for channel in 0..16 {
 			for note in 0..128 {
@@ -60,7 +61,8 @@ impl MidiNoteRegistry {
 				if velocity != 0 {
 					device.queue_event( MidiMessage {
 						timestamp: 0,
-						data: [0x80 | channel, note, 64]
+						data: [0x80 | channel, note, 64],
+						datalen: 3
 					}).unwrap();
 				}
 			}

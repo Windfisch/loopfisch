@@ -21,19 +21,21 @@ impl std::fmt::Debug for MidiDevice {
 	}
 }
 
-impl ProcessScopeTrait for jack::ProcessScope {}
+impl ProcessScopeTrait for jack::ProcessScope {
+	fn n_frames(&self) -> u32 { self.n_frames() }
+}
 
-impl<'a> TimestampedMidiEvent<'a> for jack::RawMidi<'a> {
+impl<'a> TimestampedMidiEvent for jack::RawMidi<'a> {
 	fn time(&self) -> u32 { self.time }
 	fn bytes(&self) -> &[u8] { self.bytes }
 }
 
-impl<'a> MidiDeviceTrait<'a> for MidiDevice {
-	type Event = jack::RawMidi<'a>;
-	type EventIterator = jack::MidiIter<'a>;
+impl MidiDeviceTrait for MidiDevice {
+	type Event<'a> = jack::RawMidi<'a>;
+	type EventIterator<'a> = jack::MidiIter<'a>;
 	type Scope = jack::ProcessScope;
 
-	fn incoming_events(&'a self, scope: &'a jack::ProcessScope) -> Self::EventIterator {
+	fn incoming_events(&'a self, scope: &'a jack::ProcessScope) -> Self::EventIterator<'a> {
 		self.in_port.iter(scope)
 	}
 
@@ -49,7 +51,7 @@ impl<'a> MidiDeviceTrait<'a> for MidiDevice {
 			// FIXME: do the deduping here
 			writer.write(&jack::RawMidi {
 				time: msg.timestamp,
-				bytes: &msg.data
+				bytes: &msg.data[0..msg.datalen as usize]
 			}).unwrap();
 		}
 
@@ -146,9 +148,9 @@ impl<'a> Iterator for MyOtherSliceIter<'a> {
 	}
 }
 
-impl<'a> AudioDeviceTrait<'a> for AudioDevice {
-	type SliceIter = MySliceIter<'a>;
-	type MutSliceIter = MyOtherSliceIter<'a>;
+impl AudioDeviceTrait for AudioDevice {
+	type SliceIter<'a> = MySliceIter<'a>;
+	type MutSliceIter<'a> = MyOtherSliceIter<'a>;
 	type Scope = jack::ProcessScope;
 
 	fn info(&self) -> AudioDeviceInfo {
@@ -166,11 +168,11 @@ impl<'a> AudioDeviceTrait<'a> for AudioDevice {
 		self.channels[0].in_port.get_latency_range(jack::LatencyType::Capture).1
 	}
 
-	fn playback_buffers(&'a mut self, scope: &'a jack::ProcessScope) -> Self::MutSliceIter {
+	fn playback_buffers(&'a mut self, scope: &'a jack::ProcessScope) -> Self::MutSliceIter<'a> {
 		MyOtherSliceIter(scope, self.channels.iter_mut())
 	}
 
-	fn record_buffers(&'a self, scope: &'a jack::ProcessScope) -> Self::SliceIter {
+	fn record_buffers(&'a self, scope: &'a jack::ProcessScope) -> Self::SliceIter<'a> {
 		MySliceIter(scope, self.channels.iter())
 	}
 }
