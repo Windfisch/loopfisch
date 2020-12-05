@@ -6,6 +6,7 @@ mod data;
 mod shared;
 mod backend;
 mod jack_driver;
+mod dummy_driver;
 mod metronome;
 mod midi_registry;
 mod midiclock;
