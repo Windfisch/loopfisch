@@ -11,7 +11,6 @@ mod metronome;
 mod midi_registry;
 mod midiclock;
 mod driver_traits;
-mod tests;
 
 use backend::*;
 
