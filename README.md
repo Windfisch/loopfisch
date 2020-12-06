@@ -3,11 +3,7 @@ loopfisch
 
 My attempts in writing a audio and MIDI loop machine in Rust.
 
-This is in no way a ready or usable piece of software. In fact, it is little
-more than a evolving proof-of-concept right now, requiring some code cleanup
-in the long run.
-
-However, we can already talk about where we want to go:
+This is not yet a ready or usable piece of software. It is making progress, though.
 
 Features
 --------
@@ -19,7 +15,9 @@ Features
 - Multiple output chains (implemented by having multiple JACK ports)
 - Browser-based user interface
 - Fully (PC-)keyboard-controllable (_not yet_)
-- MIDI clock master, MIDI transport slave (_not yet_)
+- MIDI clock master
+- MIDI transport slave (_not yet_)
+- Unit tests (_partially_)
 
 Build instructions
 ------------------
@@ -34,3 +32,16 @@ rustup update # might or might not be needed
 
 You might need to update rust, for more information, you can refer to
 https://rocket.rs/v0.4/guide/getting-started/.
+
+Usage
+-----
+
+Start a jack server, then launch the engine using `cargo run`. You should now be able to make REST requests
+like `curl localhost:8000 /api/synths`.
+
+In order to be able to use the GUI, change to the [web](web) directory and run `yarn serve`. (You might need to `yarn install` before). Then access [http://localhost:8080](http://localhost:8080) in your web browser.
+
+Test suite
+----------
+
+Run the tests with `cargo test`.
