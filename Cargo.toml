@@ -23,6 +23,7 @@ tokio = {version="0.2", features=["net"]}
 tokio-fd = "0.1.0"
 eventfd = {git="https://github.com/jkryl/eventfd-rust", rev="4e7c14af4b32bd764f46788c5098c951e47b38f9"}
 gen-iter = {git="https://github.com/Windfisch/gen-iter"}
+num-traits = "0.2.14"
 
 [patch.crates-io]
 rocket = {git="https://github.com/SergioBenitez/Rocket", branch="master"}

@@ -50,29 +50,12 @@ impl<T: MidiDeviceTrait> MidiClock<T> {
 mod tests {
 	use super::super::dummy_driver::*;
 	use super::*;
+	use super::super::testutils::spacing;
 
 
-	use std::cmp::{min,max};
-
-	fn spacing(mut foo: impl Iterator<Item=u32>) -> (u32, u32) {
-		let mut prev = foo.next().unwrap();
-
-		let mut lo = u32::MAX;
-		let mut hi = 0;
-
-		for val in foo {
-			let diff = val - prev;
-			lo = min(lo, diff);
-			hi = max(hi, diff);
-
-			prev = val;
-		}
-		
-		return (lo, hi);
-	}
 
 	#[test]
-	pub fn midiclock_given_songlength_produces_correct_clockticks() {
+	pub fn given_songlength_produces_correct_clockticks() {
 		let sample_rate = 44100;
 		for bpm in [31, 47, 100, 112,113,114,115,116,117,118,119,120,121, 161, 180, 213].iter() {
 			for n_beats in 4..9 {
@@ -81,15 +64,32 @@ mod tests {
 				let mut device = DummyMidiDevice::new(0);
 				let mut clock = MidiClock::new( &mut device );
 				let mut scope = DummyScope::new();
-				scope.next(song_length);
+				scope.next(4 * song_length);
 				clock.process(scope.time % song_length, song_length, n_beats, &scope);
-				assert!(device.committed.len() as u32 == 24*n_beats);
+				assert!(device.committed.len() as u32 == 4*24*n_beats);
 			}
 		}
 	}
 
 	#[test]
-	pub fn midiclock_given_multiple_of_songlength_produces_correct_clockticks() {
+	pub fn clockticks_long_term_stability() {
+		let sample_rate = 44100;
+		for bpm in 112..=120 {
+			let n_beats = 8;
+			let song_length = sample_rate * n_beats *60/bpm;
+			
+			let mut device = DummyMidiDevice::new(0);
+			let mut clock = MidiClock::new( &mut device );
+			let mut scope = DummyScope::new();
+
+			scope.run_for(1000*song_length, 1024, |scope| clock.process(scope.time, song_length, n_beats, scope));
+			assert!(device.committed.len() as u32 == 1000*24*n_beats);
+		}
+
+	}
+
+	#[test]
+	pub fn given_multiple_of_songlength_produces_correct_clockticks() {
 		let sample_rate = 44100;
 		for bpm in [31, 47, 100, 112,113,114,115,116,117,118,119,120,121, 161, 180, 213].iter() {
 			for n_beats in 4..9 {
@@ -108,7 +108,7 @@ mod tests {
 	}
 
 	#[test]
-	pub fn midiclock_given_songlength_plus_1_produces_one_more_clocktick() {
+	pub fn given_songlength_plus_1_produces_one_more_clocktick() {
 		let sample_rate = 44100;
 		for bpm in [31, 47, 100, 112,113,114,115,116,117,118,119,120,121, 161, 180, 213].iter() {
 			for n_beats in 4..9 {
@@ -125,7 +125,7 @@ mod tests {
 	}
 
 	#[test]
-	pub fn midiclock_jitter_is_less_than_1() {
+	pub fn jitter_is_less_than_1() {
 		let sample_rate = 44100;
 		let n_beats = 8;
 		for bpm in [113, 116, 127].iter() {
@@ -146,7 +146,7 @@ mod tests {
 
 
 	#[test]
-	pub fn midiclock_results_do_not_depend_on_chunksize() {
+	pub fn results_do_not_depend_on_chunksize() {
 		let sample_rate = 44100;
 		let n_beats = 8;
 		for bpm in [113, 116, 127].iter() {
@@ -178,7 +178,7 @@ mod tests {
 	}
 
 	#[test]
-	pub fn midiclock_latency_handled_correctly() {
+	pub fn latency_handled_correctly() {
 		let sample_rate = 44100;
 		for bpm in [31, 47, 100, 112,113,114,115,116,117,118,119,120,121, 161, 180, 213].iter() {
 			for n_beats in 4..9 {

@@ -24,7 +24,7 @@ impl<T: AudioDeviceTrait> AudioMetronome<T> {
 		let latency = self.device.playback_latency();
 		for buffer in self.device.playback_buffers(scope) {
 			for i in 0..scope.n_frames() {
-				buffer[i as usize] = self.volume * Self::process_one(position + i + latency, period, beats, sample_rate);
+				buffer[i as usize] = self.volume * Self::process_one((position + i + latency) % song_length, period, beats, sample_rate);
 			}
 		}
 	}
@@ -39,8 +39,141 @@ impl<T: AudioDeviceTrait> AudioMetronome<T> {
 		let freq = if beat == 0 { 880 } else { 440 };
 
 		let sawtooth: f32 = (position_in_beat as f32 / sample_rate as f32 * freq as f32).fract();
-		let square = if sawtooth < 0.5 {0.0} else {1.0};
+		let square = if sawtooth < 0.5 {-1.0} else {1.0};
 
 		return square * volume;
 	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use super::super::dummy_driver::*;
+
+	const sample_rate : u32 = 44100;
+
+	fn ticks(samples: &[f32], level: f32) -> Vec<usize> {
+		let mut high_time = 0;
+		let mut result = vec![];
+		for (i,s) in samples.iter().enumerate() {
+			if s.abs() <= level/2.0 {
+				if high_time > 0 {
+					high_time -= 1;
+				}
+			}
+			else if s.abs() >= level {
+				if high_time == 0 {
+					result.push(i);
+				}
+				high_time = 100;
+			}
+		}
+		return result;
+	}
+
+	#[test]
+	pub fn zero_dc_offset() {
+		let song_length = sample_rate * 4;
+		let device = DummyAudioDevice::new(1, 0, 0);
+		let mut metronome = AudioMetronome::new(device);
+		let mut scope = DummyScope::new();
+		scope.run_for(song_length, 1024, |scope| metronome.process(scope.time, song_length, 8, sample_rate, scope));
+		let buffer = &metronome.device.playback_buffers[0][0..1000];
+		let mean = buffer.iter().sum::<f32>() / (buffer.len() as f32);
+		let max = buffer.iter().map(|x|x.abs()).fold(0.0, |a,b| f32::max(a,b));
+		assert!( (mean / max).abs() < 0.01 );
+	}
+
+	#[test]
+	pub fn correct_amount_of_ticks() {
+		for bpm in [85, 116, 120, 121, 213].iter() {
+			for n_beats in 4..=8 {
+				let song_length = sample_rate * n_beats *60/bpm;
+
+				let device = DummyAudioDevice::new(1, 0, 0);
+				let mut metronome = AudioMetronome::new(device);
+				let mut scope = DummyScope::new();
+				scope.run_for(4*song_length, 1024, |scope| metronome.process(scope.time, song_length, n_beats, sample_rate, scope));
+				let n_ticks = ticks(&metronome.device.playback_buffers[0], 0.2).len();
+				assert!(n_ticks as u32 == 4*n_beats);
+			}
+		}
+	}
+
+	#[test]
+	pub fn all_channels_have_same_data() {
+		let channels = 3;
+		let bpm = 161;
+		let song_length = sample_rate * 4 *60/bpm;
+
+		let device = DummyAudioDevice::new(channels, 128, 0);
+		let mut metronome = AudioMetronome::new(device);
+		let mut scope = DummyScope::new();
+		scope.run_for(4*song_length, 1024, |scope| metronome.process(scope.time, song_length, 8, sample_rate, scope));
+
+		for i in 1..channels {
+			assert!( metronome.device.playback_buffers[0] == metronome.device.playback_buffers[i] );
+		}
+	}
+
+	#[test]
+	pub fn latency_compensation_works_correctly() {
+		let n_beats = 8;
+		let bpm = 117;
+		let song_length = sample_rate * n_beats *60/bpm;
+
+		for latency in [0, 1024, 9001].iter() {
+			let device = DummyAudioDevice::new(1, *latency, 0);
+			let mut metronome = AudioMetronome::new(device);
+			let mut scope = DummyScope::new();
+			scope.run_for(4*song_length, 1024, |scope| metronome.process(scope.time, song_length, 8, sample_rate, scope));
+
+
+			let beats = ticks(&metronome.device.playback_buffers[0], 0.25);
+			let found = beats.into_iter().find(|x| *x as u32 == song_length - latency).is_some();
+			assert!(found);
+		}
+	}
+
+	#[test]
+	pub fn jitter_is_low_enough() {
+		let n_beats = 8;
+		for bpm in [113, 116, 127].iter() {
+			let song_length = sample_rate * n_beats *60/bpm;
+
+			let device = DummyAudioDevice::new(1, 0, 0);
+			let mut metronome = AudioMetronome::new(device);
+			let mut scope = DummyScope::new();
+			scope.run_for(4*song_length, 1024, |scope| metronome.process(scope.time, song_length, 8, sample_rate, scope));
+
+			let (lo, hi) = super::super::testutils::spacing( ticks(&metronome.device.playback_buffers[0], 0.25).into_iter() );
+			assert!(hi-lo <= 10); // 0.25ms are acceptable
+		}
+	}
+
+	#[test]
+	pub fn results_do_not_depend_on_chunksize() {
+		let bpm=121;
+		let song_length = sample_rate * 8 *60/bpm;
+		for latency in [0, 1024].iter() {
+			let reference = {
+				let device = DummyAudioDevice::new(1, *latency, 0);
+				let mut metronome = AudioMetronome::new(device);
+				let mut scope = DummyScope::new();
+				scope.next(4*song_length);
+				metronome.process(scope.time, song_length, 8, sample_rate, &scope);
+				metronome.device.playback_buffers[0].clone()
+			};
+			
+			for chunksize in [1, 127, 128, 1023, 1024].iter() {
+				let device = DummyAudioDevice::new(1, *latency, 0);
+				let mut metronome = AudioMetronome::new(device);
+				let mut scope = DummyScope::new();
+				scope.run_for(4*song_length, *chunksize, |scope| metronome.process(scope.time, song_length, 8, sample_rate, scope));
+				assert!(reference == metronome.device.playback_buffers[0]);
+			}
+		}
+	}
+
+	
 }
