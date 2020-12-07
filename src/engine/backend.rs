@@ -205,6 +205,10 @@ impl AudioThreadState {
 						Message::FinishAudioTake(id, length) => {
 							for_take!(&mut self.audiotakes, id, t -> {
 								t.length = Some(length);
+								if t.playback_position >= length {
+									let target_position = t.playback_position % length;
+									t.seek(target_position); // TODO this is heavy work and might cause glitches. maybe slow-seek over multiple periods
+								}
 								Some(())
 							}).expect("could not find take to mute");
 						}
@@ -301,10 +305,12 @@ impl AudioThreadState {
 			if t.record_state == Recording {
 				t.record(scope,dev, 0..song_wraps_at);
 
-				if song_wraps { // FIXME WRONG
-					println!("\nFinished recording on device {}", t.audiodev_id);
-					self.event_channel.send_or_complain(Event::AudioTakeStateChanged(t.audiodev_id, t.id, RecordState::Finished));
-					t.record_state = Finished;
+				if let Some(length) = t.length {
+					if t.recorded_length >= length {
+						println!("\nFinished recording on device {}", t.audiodev_id);
+						self.event_channel.send_or_complain(Event::AudioTakeStateChanged(t.audiodev_id, t.id, RecordState::Finished));
+						t.record_state = Finished;
+					}
 				}
 			}
 			else if t.record_state == Waiting {
@@ -313,6 +319,7 @@ impl AudioThreadState {
 					self.event_channel.send_or_complain(Event::AudioTakeStateChanged(t.audiodev_id, t.id, RecordState::Recording));
 					t.record_state = Recording;
 					t.started_recording_at = self.transport_position + song_wraps_at;
+					t.recorded_length = 0;
 					t.record(scope, dev, song_wraps_at..scope.n_frames());
 				}
 			}

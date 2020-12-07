@@ -15,7 +15,8 @@ use crate::outsourced_allocation_buffer::Buffer;
 pub struct AudioTake {
 	/// Sequence of all samples. The take's duration and playhead position are implicitly managed by the underlying Buffer.
 	pub samples: Vec<Buffer<f32>>,
-	pub length: Option<u32>,
+	pub length: Option<u32>, // FIXME rename this in playback_length
+	pub recorded_length: u32,
 	pub record_state: RecordState,
 	pub playback_position: u32,
 	pub id: u32,
@@ -78,11 +79,26 @@ impl AudioTake {
 			}
 		}
 	}
+
+	pub fn seek(&mut self, position: u32) {
+		if position < self.playback_position {
+			self.rewind();
+		}
+		assert!(position >= self.playback_position);
+
+		let difference = position - self.playback_position;
+		for channel_buffer in self.samples.iter_mut() {
+			for _ in 0..difference {
+				channel_buffer.next(|_|{});
+			}
+		}
+	}
 	
 	pub fn rewind(&mut self) {
 		for channel_buffer in self.samples.iter_mut() {
 			channel_buffer.rewind();
 		}
+		self.playback_position = 0;
 	}
 
 	pub fn record<'a, T: AudioDeviceTrait>(&mut self, scope: &'a T::Scope, device: &'a T, range_u32: std::ops::Range<u32>) {
@@ -97,6 +113,7 @@ impl AudioTake {
 				}
 			}
 		}
+		self.recorded_length += range_u32.end - range_u32.start;
 	}
 }
 

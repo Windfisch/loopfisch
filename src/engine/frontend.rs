@@ -134,6 +134,7 @@ impl FrontendThreadState {
 		let take = AudioTake {
 			samples: (0..n_channels).map(|_| Buffer::new(1024*8,512*8)).collect(),
 			length: None,
+			recorded_length: 0,
 			playback_position: 0,
 			record_state: RecordState::Waiting,
 			id,
@@ -147,7 +148,7 @@ impl FrontendThreadState {
 		self.command_channel.send_message(Message::NewAudioTake(take_node))?;
 		self.devices.get_mut(&audiodev_id).unwrap().takes.insert(id, GuiAudioTake{id, audiodev_id, unmuted, length: None});
 
-		self.finish_audiotake(audiodev_id, id, self.loop_length()/2);
+		self.finish_audiotake(audiodev_id, id, self.loop_length()); // FIXME
 
 		Ok(id)
 	}
