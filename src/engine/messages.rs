@@ -11,6 +11,8 @@ pub enum Message {
 	NewMidiTake(Box<MidiTakeNode>),
 	SetAudioMute(u32,bool),
 	SetMidiMute(u32,bool),
+	FinishAudioTake(u32, u32),
+	FinishMidiTake(u32, u32),
 	DeleteTake(u32)
 }
 

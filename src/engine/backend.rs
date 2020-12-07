@@ -17,6 +17,37 @@ use super::midiclock::MidiClock;
 use assert_no_alloc::assert_no_alloc;
 use crate::realtime_send_queue;
 
+fn for_first<T: intrusive_collections::Adapter, R>(
+	list: &mut LinkedList<T>,
+	func: impl Fn (&<<T as intrusive_collections::Adapter>::PointerOps as intrusive_collections::PointerOps>::Value)->Option<R>
+) -> Result<R, ()>
+where T::LinkOps: intrusive_collections::linked_list::LinkedListOps, 
+{
+	let mut cursor = list.front();
+	while let Some(node) = cursor.get() {
+		if let Some(result) = func(&node) {
+			return Ok(result);
+		}
+		cursor.move_next();
+	}
+	Err(())
+}
+
+macro_rules! for_take {
+	($list:expr, $id:expr, $take:ident -> $code:block) => {{
+		let id = $id;
+		for_first($list, |node| {
+			let mut $take = node.take.borrow_mut();
+			if $take.id == id {
+				return {
+					$code
+				};
+			}
+			None
+		})
+	}}
+}
+
 pub struct AudioThreadState {
 	devices: Vec<Option<AudioDevice>>,
 	mididevices: Vec<Option<MidiDevice>>,
@@ -160,37 +191,41 @@ impl AudioThreadState {
 								self.destructor_thread_handle.thread().unpark();
 							}
 						}
-						Message::NewAudioTake(take) => { println!("\ngot take"); self.audiotakes.push_back(take); }
+						Message::NewAudioTake(take) => {
+							println!("\ngot take");
+							{
+								let mut t = take.take.borrow_mut();
+								let dev = self.devices[t.audiodev_id].as_mut().unwrap();
+								let latency = dev.playback_latency();
+								t.playback_position = self.song_position + latency;
+							}
+							self.audiotakes.push_back(take);
+						}
 						Message::NewMidiTake(take) => { println!("\ngot miditake"); self.miditakes.push_back(take); }
+						Message::FinishAudioTake(id, length) => {
+							for_take!(&mut self.audiotakes, id, t -> {
+								t.length = Some(length);
+								Some(())
+							}).expect("could not find take to mute");
+						}
+						Message::FinishMidiTake(id, length) => {
+							unimplemented!();
+							for_take!(&mut self.miditakes, id, t -> {
+								//t.length = length;
+								Some(())
+							}).expect("could not find take to mute");
+						}
 						Message::SetAudioMute(id, unmuted) => {
-							// FIXME this is not nice...
-							let mut cursor = self.audiotakes.front();
-							while let Some(node) = cursor.get() {
-								let mut t = node.take.borrow_mut();
-								if t.id == id {
-									t.unmuted = unmuted;
-									break;
-								}
-								cursor.move_next();
-							}
-							if cursor.get().is_none() {
-								panic!("could not find take to mute");
-							}
+							for_take!(&mut self.audiotakes, id, t -> {
+								t.unmuted = unmuted;
+								Some(())
+							}).expect("could not find take to mute");
 						}
 						Message::SetMidiMute(id, unmuted) => {
-							// FIXME this is not nice...
-							let mut cursor = self.miditakes.front();
-							while let Some(node) = cursor.get() {
-								let mut t = node.take.borrow_mut();
-								if t.id == id {
-									t.unmuted = unmuted;
-									break;
-								}
-								cursor.move_next();
-							}
-							if cursor.get().is_none() {
-								panic!("could not find miditake to mute");
-							}
+							for_take!(&mut self.miditakes, id, t -> {
+								t.unmuted = unmuted;
+								Some(())
+							}).expect("could not find take to mute");
 						}
 						_ => { unimplemented!() }
 					}
@@ -212,25 +247,7 @@ impl AudioThreadState {
 		while let Some(node) = cursor.get() {
 			let mut t = node.take.borrow_mut();
 			let dev = self.devices[t.audiodev_id].as_mut().unwrap();
-
-			let (song_wraps, song_wraps_at) = check_wrap(
-				self.song_position as i32 + dev.playback_latency() as i32,
-				self.song_length, scope.n_frames() );
-
-			if t.playing {
-				t.playback(scope,dev, 0..scope.n_frames());
-				if song_wraps { println!("\n10/10 would rewind\n"); }
-			}
-			else if t.record_state == RecordState::Recording {
-				if song_wraps {
-					t.playing = true;
-					println!("\nAlmost finished recording on device {}, thus starting playback now", t.audiodev_id);
-					println!("Recording started at {}, now is {}", t.started_recording_at, self.transport_position + song_wraps_at);
-					t.rewind();
-					t.playback(scope,dev, song_wraps_at..scope.n_frames());
-				}
-			}
-
+			t.playback(scope,dev, 0..scope.n_frames()); // handles finishing recording and wrapping around.
 			cursor.move_next();
 		}
 	}
@@ -284,7 +301,7 @@ impl AudioThreadState {
 			if t.record_state == Recording {
 				t.record(scope,dev, 0..song_wraps_at);
 
-				if song_wraps {
+				if song_wraps { // FIXME WRONG
 					println!("\nFinished recording on device {}", t.audiodev_id);
 					self.event_channel.send_or_complain(Event::AudioTakeStateChanged(t.audiodev_id, t.id, RecordState::Finished));
 					t.record_state = Finished;

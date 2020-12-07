@@ -15,13 +15,15 @@ use crate::outsourced_allocation_buffer::Buffer;
 pub struct GuiAudioTake {
 	pub id: u32,
 	pub audiodev_id: usize,
-	pub unmuted: bool
+	pub unmuted: bool,
+	pub length: Option<u32> // None means "not yet finished"
 }
 
 pub struct GuiMidiTake {
 	pub id: u32,
 	pub mididev_id: usize,
-	pub unmuted: bool
+	pub unmuted: bool,
+	pub length: Option<u32> // None means "not yet finished"
 }
 
 pub struct GuiAudioDevice {
@@ -131,6 +133,8 @@ impl FrontendThreadState {
 		let n_channels = self.devices[&audiodev_id].info.n_channels;
 		let take = AudioTake {
 			samples: (0..n_channels).map(|_| Buffer::new(1024*8,512*8)).collect(),
+			length: None,
+			playback_position: 0,
 			record_state: RecordState::Waiting,
 			id,
 			audiodev_id,
@@ -141,7 +145,10 @@ impl FrontendThreadState {
 		let take_node = Box::new(AudioTakeNode::new(take));
 
 		self.command_channel.send_message(Message::NewAudioTake(take_node))?;
-		self.devices.get_mut(&audiodev_id).unwrap().takes.insert(id, GuiAudioTake{id, audiodev_id, unmuted});
+		self.devices.get_mut(&audiodev_id).unwrap().takes.insert(id, GuiAudioTake{id, audiodev_id, unmuted, length: None});
+
+		self.finish_audiotake(audiodev_id, id, self.loop_length()/2);
+
 		Ok(id)
 	}
 
@@ -164,8 +171,28 @@ impl FrontendThreadState {
 		let take_node = Box::new(MidiTakeNode::new(take));
 
 		self.command_channel.send_message(Message::NewMidiTake(take_node))?;
-		self.mididevices.get_mut(&mididev_id).unwrap().takes.insert(id, GuiMidiTake{id, mididev_id, unmuted});
+		self.mididevices.get_mut(&mididev_id).unwrap().takes.insert(id, GuiMidiTake{id, mididev_id, unmuted, length: None});
 		Ok(id)
+	}
+
+	pub fn finish_audiotake(&mut self, audiodev_id: usize, take_id: u32, take_length: u32) -> Result<(),()> {
+		let take = &mut self.devices.get_mut(&audiodev_id).unwrap().takes.get_mut(&take_id).unwrap(); // TODO propagate error
+		if take.length.is_some() {
+			return Err(());
+		}
+		take.length = Some(take_length);
+		self.command_channel.send_message(Message::FinishAudioTake(take.id, take_length)).unwrap(); // TODO
+		Ok(())
+	}
+
+	pub fn finish_miditake(&mut self, mididev_id: usize, take_id: u32, take_length: u32) -> Result<(),()> {
+		let take = &mut self.devices.get_mut(&mididev_id).unwrap().takes.get_mut(&take_id).unwrap(); // TODO propagate error
+		if take.length.is_some() {
+			return Err(());
+		}
+		take.length = Some(take_length);
+		self.command_channel.send_message(Message::FinishMidiTake(take.id, take_length)).unwrap(); // TODO
+		Ok(())
 	}
 
 	pub fn set_audiotake_unmuted(&mut self, audiodev_id: usize, take_id: u32, unmuted: bool) -> Result<(),()> {
