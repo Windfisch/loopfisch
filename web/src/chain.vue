@@ -2,9 +2,6 @@
 module.exports = {
 	props: ['name', 'takes', 'midi', 'id', 'synthid', 'model'],
 	methods: {
-		async record_audio() {
-			await this.new_take("Audio");
-		},
 		async new_take(type) {
 			var post = await fetch(
 				"http://localhost:8000/api/synths/" + this.synthid
@@ -38,8 +35,32 @@ module.exports = {
 				alert("Failed to create take!");
 			}
 		},
+		async record_audio() {
+			if (this.has_recording_takes) {
+				await this.stop_recording();
+			}
+			else {
+				await this.new_take("Audio");
+			}
+		},
 		async record_midi() {
-			await this.new_take("Midi");
+			if (this.has_recording_takes) {
+				await this.stop_recording();
+			}
+			else {
+				await this.new_take("Midi");
+			}
+		},
+		async stop_recording() {
+			for (var take of this.takes.filter(t => t.state === "Recording")) {
+				fetch(
+					"http://localhost:8000/api/synths/" + this.synthid
+					+ "/chains/" + this.id +
+					"/takes/" + take.id +
+					"/finish_recording",
+					{ method: 'POST', mode: 'cors' }
+				);
+			}
 		},
 		has_audio_takes() {
 			return this.takes.filter(t => t.type === "Audio").length > 0;
@@ -114,6 +135,11 @@ module.exports = {
 			}
 		}
 	},
+	computed: {
+		has_recording_takes: function() {
+			return this.takes.filter(t => t.state === "Recording").length > 0;
+		}
+	},
 	data: function() {
 		return {
 			show_midi: true
@@ -128,8 +154,8 @@ module.exports = {
 				<h1>{{name}}</h1>
 				<div style="flex-grow: 2"></div>
 				<button v-if="needs_show_midi_button()" v-on:click="showhidemidi">{{ show_midi ? 'hide midi' : 'show midi' }}</button>
-				<button v-on:click="record_audio">rec audio</button>
-				<button v-on:click="record_midi">rec midi</button>
+				<button v-on:click="record_audio">{{ has_recording_takes ? "stop rec" : "rec audio" }}</button>
+				<button v-on:click="record_midi">{{ has_recording_takes ? "stop rec" : "rec midi" }}</button>
 			</div>
 
 	
