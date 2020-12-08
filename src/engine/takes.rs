@@ -92,6 +92,8 @@ impl AudioTake {
 				channel_buffer.next(|_|{});
 			}
 		}
+
+		self.playback_position = position;
 	}
 	
 	pub fn rewind(&mut self) {
