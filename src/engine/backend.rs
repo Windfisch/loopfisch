@@ -302,7 +302,7 @@ impl AudioThreadState {
 				if let Some(length) = t.length {
 					if t.recorded_length >= length {
 						println!("\nFinished recording on device {}", t.audiodev_id);
-						self.event_channel.send_or_complain(Event::AudioTakeStateChanged(t.audiodev_id, t.id, RecordState::Finished));
+						self.event_channel.send_or_complain(Event::AudioTakeStateChanged(t.audiodev_id, t.id, RecordState::Finished, self.transport_position + song_wraps_at));
 						t.record_state = Finished;
 					}
 				}
@@ -310,7 +310,7 @@ impl AudioThreadState {
 			else if t.record_state == Waiting {
 				if song_wraps {
 					println!("\nStarted recording on device {}", t.audiodev_id);
-					self.event_channel.send_or_complain(Event::AudioTakeStateChanged(t.audiodev_id, t.id, RecordState::Recording));
+					self.event_channel.send_or_complain(Event::AudioTakeStateChanged(t.audiodev_id, t.id, RecordState::Recording, self.transport_position + song_wraps_at));
 					t.record_state = Recording;
 					t.started_recording_at = self.transport_position + song_wraps_at;
 					t.recorded_length = 0;
@@ -340,14 +340,14 @@ impl AudioThreadState {
 				if song_wraps {
 					println!("\nFinished recording on device {}", t.mididev_id);
 					t.finish_recording(scope, dev, 0..song_wraps_at);
-					self.event_channel.send_or_complain(Event::MidiTakeStateChanged(t.mididev_id, t.id, RecordState::Finished));
+					self.event_channel.send_or_complain(Event::MidiTakeStateChanged(t.mididev_id, t.id, RecordState::Finished, self.transport_position + song_wraps_at));
 					t.record_state = Finished;
 				}
 			}
 			else if t.record_state == Waiting {
 				if song_wraps {
 					println!("\nStarted recording on device {}", t.mididev_id);
-					self.event_channel.send_or_complain(Event::MidiTakeStateChanged(t.mididev_id, t.id, RecordState::Recording));
+					self.event_channel.send_or_complain(Event::MidiTakeStateChanged(t.mididev_id, t.id, RecordState::Recording, self.transport_position + song_wraps_at));
 					t.record_state = Recording;
 					t.started_recording_at = self.transport_position + song_wraps_at;
 					t.start_recording(scope, dev, 0..song_wraps_at);

@@ -1,6 +1,6 @@
 pub enum Event {
-	AudioTakeStateChanged(usize, u32, RecordState),
-	MidiTakeStateChanged(usize, u32, RecordState),
+	AudioTakeStateChanged(usize, u32, RecordState, u32),
+	MidiTakeStateChanged(usize, u32, RecordState, u32 /* timestamp */),
 	Timestamp(u32, u32),
 	Kill
 }

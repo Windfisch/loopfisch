@@ -29,22 +29,23 @@ pub struct Chain {
 	pub engine_audiodevice_id: usize
 }
 
-#[derive(Serialize,Clone,PartialEq)]
+#[derive(Clone,PartialEq)]
 pub enum RecordingState {
 	Waiting,
-	Recording,
+	Recording(u32 /*since when*/),
 	Finished
 }
 
-impl From<crate::engine::RecordState> for RecordingState {
-	fn from(record_state: crate::engine::RecordState) -> Self {
-		use crate::engine;
-		match record_state {
-			engine::RecordState::Waiting => RecordingState::Waiting,
-			engine::RecordState::Recording => RecordingState::Recording,
-			engine::RecordState::Finished => RecordingState::Finished,
+impl Serialize for RecordingState {
+	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+		where S: serde::Serializer,
+		{
+			match *self {
+				RecordingState::Waiting => serializer.serialize_unit_variant("RecordingState", 0, "Waiting"),
+				RecordingState::Recording(_) => serializer.serialize_unit_variant("RecordingState", 0, "Recording"),
+				RecordingState::Finished => serializer.serialize_unit_variant("RecordingState", 0, "Finished"),
+			}
 		}
-	}
 }
 
 #[derive(Clone, PartialEq)]

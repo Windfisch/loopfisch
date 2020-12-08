@@ -141,3 +141,34 @@ pub async fn post_take(state: State<'_, std::sync::Arc<GuiState>>, synthid: u32,
 	}
 	Err(Status::NotFound)
 }
+
+fn div_ceil(a: u32, b: u32) -> u32 { (a+b-1)/b }
+
+#[post("/synths/<synthid>/chains/<chainid>/takes/<takeid>/finish_recording")]
+pub async fn post_take_finish_recording(state: State<'_, std::sync::Arc<GuiState>>, synthid: u32, chainid: u32, takeid: u32) -> Result<rocket::response::status::Accepted::<()>, Status> {
+	let mut guard_ = state.mutex.lock().await;
+	let guard = &mut *guard_;
+	if let Some(synth) = guard.synths.iter_mut().find(|s| s.id == synthid) {
+		if let Some(chain) = synth.chains.iter_mut().find(|c| c.id == chainid) {
+			if let Some(take) = chain.takes.iter_mut().find(|s| s.id == takeid) {
+				if let RecordingState::Recording(started) = take.state {
+					// TODO: check whether the take has already been finished
+					let now = guard.engine.transport_position();
+					let current_duration = now - started;
+					let loop_length = guard.engine.loop_length();
+					let target_duration = div_ceil(current_duration - std::cmp::min(loop_length/4, current_duration-1), loop_length) * loop_length;
+					println!("rounding take duration {} to {} (base loop length is {})", current_duration, target_duration, loop_length);
+
+					match take.engine_take_id {
+						EngineTakeRef::Audio(id) => guard.engine.finish_audiotake(chain.engine_audiodevice_id, id, target_duration),
+						EngineTakeRef::Midi(id) => guard.engine.finish_miditake(synth.engine_mididevice_id, id, target_duration)
+					};
+
+					// TODO set the take as finished
+					return Ok(rocket::response::status::Accepted(None));
+				}
+			}
+		}
+	}
+	Err(Status::NotFound)
+}

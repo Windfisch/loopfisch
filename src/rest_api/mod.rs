@@ -70,24 +70,36 @@ pub async fn launch_server(engine: FrontendThreadState, event_channel_: realtime
 		loop {
 			match event_channel.receive().await
 			{
-				Event::AudioTakeStateChanged(dev_id, take_id, new_state) =>
+				Event::AudioTakeStateChanged(dev_id, take_id, new_state, timestamp) =>
 				{
 					println!("\n\n\n############# audio state {:?}\n\n\n", new_state);
 					let mut guard = state2.mutex.lock().await;
 					if let Some((synthid, chainid, mut take)) = guard.find_audiotake_by_engine_id(dev_id, take_id) {
-						take.state = new_state.into();
+						use crate::engine::RecordState;
+						take.state =
+							match new_state {
+								RecordState::Waiting => RecordingState::Waiting,
+								RecordState::Recording => RecordingState::Recording(timestamp),
+								RecordState::Finished => RecordingState::Finished
+							};
 						state2.update_list.push( make_update_take(&take, synthid, chainid) ).await;
 					}
 					else {
 						panic!();
 					}
 				}
-				Event::MidiTakeStateChanged(mididev_id, take_id, new_state) =>
+				Event::MidiTakeStateChanged(mididev_id, take_id, new_state, timestamp) =>
 				{
 					println!("\n\n\n############# midi state {:?}\n\n\n", new_state);
 					let mut guard = state2.mutex.lock().await;
 					if let Some((synthid, chainid, mut take)) = guard.find_miditake_by_engine_id(mididev_id, take_id) {
-						take.state = new_state.into();
+						use crate::engine::RecordState;
+						take.state =
+							match new_state {
+								RecordState::Waiting => RecordingState::Waiting,
+								RecordState::Recording => RecordingState::Recording(timestamp),
+								RecordState::Finished => RecordingState::Finished
+							};
 						state2.update_list.push( make_update_take(&take, synthid, chainid) ).await;
 					}
 					else {
@@ -124,7 +136,7 @@ pub async fn launch_server(engine: FrontendThreadState, event_channel_: realtime
 			takes_get, takes_get_one,
 			patch_synths, patch_synth, post_synth,
 			patch_chains, patch_chain, post_chain,
-			patch_takes, patch_take, post_take,
+			patch_takes, patch_take, post_take, post_take_finish_recording
 		])
 		.register(catchers![not_found])
 		.attach(cors::CORS())
