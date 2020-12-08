@@ -22,7 +22,6 @@ pub struct AudioTake {
 	pub id: u32,
 	pub audiodev_id: usize,
 	pub unmuted: bool,
-	pub playing: bool,
 	pub started_recording_at: u32,
 }
 
@@ -33,7 +32,6 @@ impl std::fmt::Debug for AudioTake {
 			.field("id", &self.id)
 			.field("audiodev_id", &self.audiodev_id)
 			.field("unmuted", &self.unmuted)
-			.field("playing", &self.playing)
 			.field("started_recording_at", &self.started_recording_at)
 			.field("channels", &self.samples.len())
 			.field("samples", &if self.samples[0].empty() { "<Empty>".to_string() } else { "[...]".to_string() })
@@ -47,23 +45,19 @@ impl AudioTake {
 			let range = range_u32.start as usize .. range_u32.end as usize;
 			for (channel_buffer, channel_slice) in self.samples.iter_mut().zip(device.playback_buffers(scope)) {
 				let mut position = self.playback_position;
-				let mut playing = self.playing;
 				let buffer = &mut channel_slice[range.clone()];
 				for d in buffer {
 					if position >= length {
 						channel_buffer.rewind();
 						position = 0;
-						playing = true;
 						println!("\nrewind in playback\n");
 					}
 					position += 1;
 
-					if playing {
-						let mut val = channel_buffer.next(|v|*v);
-						if let Some(v) = val {
-							if self.unmuted { // FIXME fade in / out to avoid clicks
-								*d += v;
-							}
+					let val = channel_buffer.next(|v|*v);
+					if let Some(v) = val {
+						if self.unmuted { // FIXME fade in / out to avoid clicks
+							*d += v;
 						}
 					}
 				}
@@ -73,10 +67,7 @@ impl AudioTake {
 		self.playback_position += range_u32.end - range_u32.start;
 		
 		if let Some(length) = self.length {
-			if self.playback_position >= length {
-				self.playing = true;
-				self.playback_position %= length;
-			}
+			self.playback_position %= length;
 		}
 	}
 

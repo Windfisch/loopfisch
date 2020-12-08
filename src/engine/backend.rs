@@ -193,12 +193,6 @@ impl AudioThreadState {
 						}
 						Message::NewAudioTake(take) => {
 							println!("\ngot take");
-							{
-								let mut t = take.take.borrow_mut();
-								let dev = self.devices[t.audiodev_id].as_mut().unwrap();
-								let latency = dev.playback_latency();
-								t.playback_position = self.song_position + latency;
-							}
 							self.audiotakes.push_back(take);
 						}
 						Message::NewMidiTake(take) => { println!("\ngot miditake"); self.miditakes.push_back(take); }
@@ -321,6 +315,7 @@ impl AudioThreadState {
 					t.started_recording_at = self.transport_position + song_wraps_at;
 					t.recorded_length = 0;
 					t.record(scope, dev, song_wraps_at..scope.n_frames());
+					t.playback_position = scope.n_frames()-song_wraps_at + dev.capture_latency() + dev.playback_latency();
 				}
 			}
 

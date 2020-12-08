@@ -140,15 +140,12 @@ impl FrontendThreadState {
 			id,
 			audiodev_id,
 			unmuted,
-			playing: false,
 			started_recording_at: 0
 		};
 		let take_node = Box::new(AudioTakeNode::new(take));
 
 		self.command_channel.send_message(Message::NewAudioTake(take_node))?;
 		self.devices.get_mut(&audiodev_id).unwrap().takes.insert(id, GuiAudioTake{id, audiodev_id, unmuted, length: None});
-
-		self.finish_audiotake(audiodev_id, id, self.loop_length()); // FIXME
 
 		Ok(id)
 	}
