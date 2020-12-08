@@ -303,7 +303,7 @@ impl AudioThreadState {
 				self.song_length, scope.n_frames() );
 
 			if t.record_state == Recording {
-				t.record(scope,dev, 0..song_wraps_at);
+				t.record(scope,dev, 0..scope.n_frames());
 
 				if let Some(length) = t.length {
 					if t.recorded_length >= length {
