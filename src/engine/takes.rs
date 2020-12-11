@@ -144,11 +144,7 @@ impl std::fmt::Debug for MidiTake {
 
 
 impl MidiTake {
-	/// Enumerates all events that take place in the next `range.len()` frames and puts
-	/// them into device's playback queue. The events are automatically looped every
-	/// `self.duration` frames.
-	pub fn playback<'a>(&mut self, device: &'a mut impl MidiDeviceTrait, range_u32: std::ops::Range<u32>) {
-		let range = range_u32.start as usize .. range_u32.end as usize;
+	fn handle_mute_change<'a>(&mut self, device: &'a mut impl MidiDeviceTrait) {
 		if self.unmuted != self.unmuted_old {
 			if self.unmuted {
 				self.note_registry.borrow_mut().send_noteons(device);
@@ -158,7 +154,13 @@ impl MidiTake {
 			}
 			self.unmuted_old = self.unmuted;
 		}
-		
+	}
+
+	/// Enumerates all events that take place in the next `range.len()` frames and puts
+	/// them into device's playback queue. The events are automatically looped every
+	/// `self.duration` frames.
+	pub fn playback<'a>(&mut self, device: &'a mut impl MidiDeviceTrait, range: std::ops::Range<u32>) {
+		self.handle_mute_change(device);
 
 		let position_after = self.current_position + range.len() as u32;
 
