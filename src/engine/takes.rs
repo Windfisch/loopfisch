@@ -40,7 +40,7 @@ impl std::fmt::Debug for AudioTake {
 }
 
 impl AudioTake {
-	pub fn playback<'a, T: AudioDeviceTrait>(&mut self, scope: &'a T::Scope, device: &'a mut T, range_u32: std::ops::Range<u32>) {
+	pub fn playback<T: AudioDeviceTrait>(&mut self, scope: &T::Scope, device: &mut T, range_u32: std::ops::Range<u32>) {
 		if let Some(length) = self.length {
 			let range = range_u32.start as usize .. range_u32.end as usize;
 			for (channel_buffer, channel_slice) in self.samples.iter_mut().zip(device.playback_buffers(scope)) {
@@ -64,7 +64,7 @@ impl AudioTake {
 			}
 		}
 
-		self.playback_position += range_u32.end - range_u32.start;
+		self.playback_position += range_u32.len() as u32;
 		
 		if let Some(length) = self.length {
 			self.playback_position %= length;
@@ -94,7 +94,7 @@ impl AudioTake {
 		self.playback_position = 0;
 	}
 
-	pub fn record<'a, T: AudioDeviceTrait>(&mut self, scope: &'a T::Scope, device: &'a T, range_u32: std::ops::Range<u32>) {
+	pub fn record<T: AudioDeviceTrait>(&mut self, scope: &T::Scope, device: &T, range_u32: std::ops::Range<u32>) {
 		let range = range_u32.start as usize .. range_u32.end as usize;
 		for (channel_buffer, channel_slice) in self.samples.iter_mut().zip(device.record_buffers(scope)) {
 			let data = &channel_slice[range.clone()];
@@ -106,25 +106,26 @@ impl AudioTake {
 				}
 			}
 		}
-		self.recorded_length += range_u32.end - range_u32.start;
+		self.recorded_length += range.len() as u32;
 	}
 }
 
 pub struct MidiTake {
-	/// Sorted sequence of all events with timestamps between 0 and self.duration
+	/// Sorted sequence of all events with timestamps between 0 and self.recorded_length
 	pub events: Buffer<MidiMessage>,
 	/// Current playhead position
-	pub current_position: u32,
+	pub playback_position: u32,
 	/// Number of frames after which the recorded events shall loop.
-	pub duration: u32,
+	pub recorded_length: u32,
 	pub record_state: RecordState,
+	pub length: Option<u32>, // FIXME rename this in playback_length
 	pub id: u32,
 	pub mididev_id: usize,
 	pub unmuted: bool,
 	pub unmuted_old: bool,
-	pub playing: bool,
 	pub started_recording_at: u32,
-	pub note_registry: RefCell<MidiNoteRegistry> // this SUCKS. TODO.
+	pub note_registry: RefCell<MidiNoteRegistry>, // this RefCell here SUCKS. TODO.
+	pub is_post_rewind_action_pending: bool
 }
 
 impl std::fmt::Debug for MidiTake {
@@ -134,7 +135,6 @@ impl std::fmt::Debug for MidiTake {
 			.field("id", &self.id)
 			.field("mididev_id", &self.mididev_id)
 			.field("unmuted", &self.unmuted)
-			.field("playing", &self.playing)
 			.field("started_recording_at", &self.started_recording_at)
 			.field("events", &if self.events.empty() { "<Empty>".to_string() } else { "[...]".to_string() })
 			.finish()
@@ -144,7 +144,7 @@ impl std::fmt::Debug for MidiTake {
 
 
 impl MidiTake {
-	fn handle_mute_change<'a>(&mut self, device: &'a mut impl MidiDeviceTrait) {
+	fn handle_mute_change(&mut self, device: &mut impl MidiDeviceTrait) {
 		if self.unmuted != self.unmuted_old {
 			if self.unmuted {
 				self.note_registry.borrow_mut().send_noteons(device);
@@ -158,78 +158,116 @@ impl MidiTake {
 
 	/// Enumerates all events that take place in the next `range.len()` frames and puts
 	/// them into device's playback queue. The events are automatically looped every
-	/// `self.duration` frames.
-	pub fn playback<'a>(&mut self, device: &'a mut impl MidiDeviceTrait, range: std::ops::Range<u32>) {
-		self.handle_mute_change(device);
+	/// `self.length` frames.
+	pub fn playback(&mut self, device: &mut impl MidiDeviceTrait, range: std::ops::Range<u32>) {
+		if let Some(length) = self.length {
 
-		let position_after = self.current_position + range.len() as u32;
+			self.handle_mute_change(device);
 
-		// iterate through the events until either a) we've reached the end or b) we've reached
-		// an event which is past the current period.
-		let curr_pos = self.current_position;
-		let mut rewind_offset = 0;
-		loop {
+			let curr_pos = self.playback_position;
 			let unmuted = self.unmuted;
-			let mut note_registry = self.note_registry.borrow_mut(); // TODO this SUCKS! oh god why, rust. this whole callback thing is garbage.
-			let result = self.events.peek( |event| {
-				assert!(event.timestamp + rewind_offset >= curr_pos);
-				let relative_timestamp = event.timestamp + rewind_offset - curr_pos + range.start as u32;
-				assert!(relative_timestamp >= range.start as u32);
-				if relative_timestamp >= range.end as u32 {
-					return false; // signify "please break the loop"
-				}
+			let mut rewind_offset = 0;
+			loop {
+				let mut note_registry = self.note_registry.borrow_mut(); // TODO this SUCKS! oh god why, rust. this whole callback thing is garbage.
 
-				if unmuted {
-					device.queue_event(
-						MidiMessage {
-							timestamp: relative_timestamp,
-							data: event.data,
-							datalen: event.datalen
+				if self.is_post_rewind_action_pending {
+					let relative_timestamp = rewind_offset - curr_pos + range.start;
+					if relative_timestamp < range.end {
+						if unmuted {
+							note_registry.send_noteoffs_at(device, relative_timestamp);
 						}
-					).unwrap();
-				}
-				note_registry.register_event(event.data);
-
-				return true; // signify "please continue the loop"
-			});
-
-			match result {
-				None => { // we hit the end of the event list
-					if  position_after - rewind_offset > self.duration {
-						// we actually should rewind, since the playhead position has hit the end
-						self.events.rewind();
-						rewind_offset += self.duration;
+						note_registry.clear();
+						self.is_post_rewind_action_pending = false;
 					}
-					else {
-						// we should *not* rewind: we're at the end of the event list, but the
-						// loop duration itself has not passed yet
+				}
+				enum Outcome {
+					RewindAndContinue,
+					Break,
+					NextAndContinue
+				}
+				let result = self.events.peek( |event| {
+					if event.timestamp > length {
+						return Outcome::RewindAndContinue;
+					}
+
+					assert!(event.timestamp + rewind_offset >= curr_pos);
+					let relative_timestamp = event.timestamp + rewind_offset - curr_pos + range.start;
+					assert!(relative_timestamp >= range.start);
+
+					if relative_timestamp >= range.end {
+						return Outcome::Break;
+					}
+					
+					if unmuted {
+						device.queue_event(
+							MidiMessage {
+								timestamp: relative_timestamp,
+								data: event.data,
+								datalen: event.datalen
+							}
+						).unwrap();
+					}
+					note_registry.register_event(event.data);
+
+					return Outcome::NextAndContinue;
+				});
+				
+				match result {
+					None | Some(Outcome::RewindAndContinue) => {
+						self.events.rewind();
+						rewind_offset += length;
+						if rewind_offset - curr_pos + range.start >= range.end {
+							break;
+						}
+					}
+					Some(Outcome::NextAndContinue) => {
+						self.events.next(|_|());
+					}
+					Some(Outcome::Break) => {
 						break;
 					}
 				}
-				Some(true) => { // the usual case
-					self.events.next(|_|());
-				}
-				Some(false) => { // we found an event which is past the current range
-					break;
-				}
 			}
+
+			assert!(self.playback_position + range.len() as u32 - rewind_offset == (self.playback_position + range.len() as u32) % length);
 		}
 
-		self.current_position = position_after - rewind_offset;
+		self.playback_position += range.len() as u32;
+		
+		if let Some(length) = self.length {
+			self.playback_position %= length;
+		}
 	}
 
 	pub fn rewind(&mut self) {
-		self.current_position = 0;
+		self.playback_position = 0;
 		self.events.rewind();
 	}
 
-	pub fn start_recording<'a, T: MidiDeviceTrait>(&mut self, scope: &'a T::Scope, device: &'a T, range_u32: std::ops::Range<u32>) {
+	pub fn seek(&mut self, position: u32) {
+		if position < self.playback_position {
+			self.rewind();
+		}
+		assert!(position >= self.playback_position);
+
+		loop {
+			match self.events.peek( |event| event.timestamp >= position ) {
+				None | Some(true) => { break; }
+				Some(false) => { self.events.next(|_|{}); }
+			}
+		}
+
+		self.playback_position = position;
+	}
+
+	/** registers all notes that are currently held down (at time range.begin) as if they were
+	  * pressed down at the very beginning of the recording */
+	pub fn start_recording<T: MidiDeviceTrait>(&mut self, scope: &T::Scope, device: &T, range: std::ops::Range<u32>) {
 		use std::convert::TryInto;
-		let range = range_u32.start as usize .. range_u32.end as usize;
 		
 		let mut registry = device.clone_registry();
 		for event in device.incoming_events(scope) {
-			if range.contains(&(event.time() as usize)) {
+			if range.contains(&event.time()) {
 				if event.bytes().len() == 3 {
 					let data: [u8;3] = event.bytes().try_into().unwrap();
 					registry.register_event(data);
@@ -246,43 +284,17 @@ impl MidiTake {
 		}
 	}
 
-	pub fn finish_recording<'a, T: MidiDeviceTrait>(&mut self, scope: &'a T::Scope, device: &'a T, range_u32: std::ops::Range<u32>) {
+	pub fn record<T: MidiDeviceTrait>(&mut self, scope: &T::Scope, device: &T, range: std::ops::Range<u32>) {
 		use std::convert::TryInto;
-		let range = range_u32.start as usize .. range_u32.end as usize;
-		
-		let mut registry = device.clone_registry();
 		for event in device.incoming_events(scope) {
-			if range.contains(&(event.time() as usize)) {
-				if event.bytes().len() == 3 {
-					let data: [u8;3] = event.bytes().try_into().unwrap();
-					registry.register_event(data);
-				}
-			}
-		}
-
-		for mut data in registry.active_notes() {
-			data[0] = 0x80 | (0x0f & data[0]); // turn the note-on that was returned into a note-off
-			data[2] = 64;
-			self.events.push( MidiMessage {
-				timestamp: self.duration-1,
-				data,
-				datalen: 3
-			});
-		}
-	}
-
-	pub fn record<'a, T: MidiDeviceTrait>(&mut self, scope: &'a T::Scope, device: &'a T, range_u32: std::ops::Range<u32>) {
-		use std::convert::TryInto;
-		let range = range_u32.start as usize .. range_u32.end as usize;
-		for event in device.incoming_events(scope) {
-			if range.contains(&(event.time() as usize)) {
+			if range.contains(&event.time()) {
 				if event.bytes().len() != 3 {
 					// FIXME
 					println!("ignoring event with length != 3");
 				}
 				else {
 					let data: [u8;3] = event.bytes().try_into().unwrap();
-					let timestamp = event.time() - range.start as u32 + self.duration;
+					let timestamp = event.time() - range.start + self.recorded_length;
 					
 					let result = self.events.push( MidiMessage {
 						timestamp,
@@ -300,7 +312,7 @@ impl MidiTake {
 			}
 		}
 		
-		self.duration += range.len() as u32;
+		self.recorded_length += range.len() as u32;
 	}
 }
 

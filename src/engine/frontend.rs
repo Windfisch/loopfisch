@@ -160,10 +160,11 @@ impl FrontendThreadState {
 			mididev_id,
 			unmuted,
 			unmuted_old: unmuted,
-			playing: false,
 			started_recording_at: 0,
-			current_position: 0,
-			duration: 0,
+			playback_position: 0,
+			is_post_rewind_action_pending: false,
+			length: None,
+			recorded_length: 0,
 			note_registry: RefCell::new(MidiNoteRegistry::new())
 		};
 		let take_node = Box::new(MidiTakeNode::new(take));

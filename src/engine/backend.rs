@@ -206,10 +206,13 @@ impl AudioThreadState {
 								Some(())
 							}).expect("could not find take to mute");
 						}
-						Message::FinishMidiTake(id, length) => {
-							unimplemented!();
+						Message::FinishMidiTake(id, length) => { // TODO duplicated code
 							for_take!(&mut self.miditakes, id, t -> {
-								//t.length = length;
+								t.length = Some(length);
+								if t.playback_position >= length {
+									let target_position = t.playback_position % length;
+									t.seek(target_position); // TODO this is heavy work and might cause glitches. maybe slow-seek over multiple periods
+								}
 								Some(())
 							}).expect("could not find take to mute");
 						}
@@ -233,14 +236,13 @@ impl AudioThreadState {
 		}
 	}
 
-	/** play all playing audio takes and start playback for those that are just leaving `Recording` state */
 	fn process_audio_playback(&mut self, scope: &jack::ProcessScope) {
 		for dev in self.devices.iter_mut() {
 			if let Some(d) = dev {
 				play_silence(scope,d,0..scope.n_frames());
 			}
 		}
-		
+
 		let mut cursor = self.audiotakes.front();
 		while let Some(node) = cursor.get() {
 			let mut t = node.take.borrow_mut();
@@ -255,28 +257,10 @@ impl AudioThreadState {
 		while let Some(node) = cursor.get() {
 			let mut t = node.take.borrow_mut();
 			let dev = self.mididevices[t.mididev_id].as_mut().unwrap();
-
-			let (song_wraps, song_wraps_at) = check_wrap(
-				self.song_position as i32 + dev.playback_latency() as i32,
-				self.song_length, scope.n_frames() );
-
-			if t.playing {
-				t.playback(dev, 0..scope.n_frames());
-				if song_wraps { println!("\n10/10 would rewind\n"); }
-			}
-			else if t.record_state == RecordState::Recording {
-				if song_wraps {
-					t.playing = true;
-					println!("\nAlmost finished recording on midi device {}, thus starting playback now", t.mididev_id);
-					println!("Recording started at {}, now is {}", t.started_recording_at, self.transport_position + song_wraps_at);
-					t.rewind();
-					t.playback(dev, song_wraps_at..scope.n_frames());
-				}
-			}
-
+			t.playback(dev, 0..scope.n_frames()); // handles finishing recording and wrapping around.
 			cursor.move_next();
 		}
-		
+
 		for dev in self.mididevices.iter_mut() {
 			if let Some(d) = dev {
 				d.commit_out_buffer(scope);
@@ -335,13 +319,14 @@ impl AudioThreadState {
 				self.song_length, scope.n_frames() );
 
 			if t.record_state == Recording {
-				t.record(scope,dev, 0..song_wraps_at);
+				t.record(scope,dev, 0..scope.n_frames());
 
-				if song_wraps {
-					println!("\nFinished recording on device {}", t.mididev_id);
-					t.finish_recording(scope, dev, 0..song_wraps_at);
-					self.event_channel.send_or_complain(Event::MidiTakeStateChanged(t.mididev_id, t.id, RecordState::Finished, self.transport_position + song_wraps_at));
-					t.record_state = Finished;
+				if let Some(length) = t.length {
+					if t.recorded_length >= length {
+						println!("\nFinished recording on device {}", t.mididev_id);
+						self.event_channel.send_or_complain(Event::MidiTakeStateChanged(t.mididev_id, t.id, RecordState::Finished, self.transport_position + song_wraps_at));
+						t.record_state = Finished;
+					}
 				}
 			}
 			else if t.record_state == Waiting {
@@ -351,7 +336,9 @@ impl AudioThreadState {
 					t.record_state = Recording;
 					t.started_recording_at = self.transport_position + song_wraps_at;
 					t.start_recording(scope, dev, 0..song_wraps_at);
+					t.recorded_length = 0;
 					t.record(scope, dev, song_wraps_at..scope.n_frames());
+					t.playback_position = scope.n_frames()-song_wraps_at + dev.capture_latency() + dev.playback_latency();
 				}
 			}
 
