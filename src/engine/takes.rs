@@ -54,7 +54,7 @@ impl AudioTake {
 					}
 					position += 1;
 
-					let val = channel_buffer.next(|v|*v);
+					let val = channel_buffer.next();
 					if let Some(v) = val {
 						if self.unmuted { // FIXME fade in / out to avoid clicks
 							*d += v;
@@ -80,7 +80,7 @@ impl AudioTake {
 		let difference = position - self.playback_position;
 		for channel_buffer in self.samples.iter_mut() {
 			for _ in 0..difference {
-				channel_buffer.next(|_|{});
+				channel_buffer.next();
 			}
 		}
 
@@ -180,22 +180,14 @@ impl MidiTake {
 						self.is_post_rewind_action_pending = false;
 					}
 				}
-				enum Outcome {
-					RewindAndContinue,
-					Break,
-					NextAndContinue
-				}
-				let result = self.events.peek( |event| {
-					if event.timestamp > length {
-						return Outcome::RewindAndContinue;
-					}
 
+				if let Some(event) = self.events.peek().filter(|event| event.timestamp < length) {
 					assert!(event.timestamp + rewind_offset >= curr_pos);
 					let relative_timestamp = event.timestamp + rewind_offset - curr_pos + range.start;
 					assert!(relative_timestamp >= range.start);
 
 					if relative_timestamp >= range.end {
-						return Outcome::Break;
+						break;
 					}
 					
 					if unmuted {
@@ -209,21 +201,12 @@ impl MidiTake {
 					}
 					note_registry.register_event(event.data);
 
-					return Outcome::NextAndContinue;
-				});
-				
-				match result {
-					None | Some(Outcome::RewindAndContinue) => {
-						self.events.rewind();
-						rewind_offset += length;
-						if rewind_offset - curr_pos + range.start >= range.end {
-							break;
-						}
-					}
-					Some(Outcome::NextAndContinue) => {
-						self.events.next(|_|());
-					}
-					Some(Outcome::Break) => {
+					self.events.next();
+				}
+				else {
+					self.events.rewind();
+					rewind_offset += length;
+					if rewind_offset - curr_pos + range.start >= range.end {
 						break;
 					}
 				}
@@ -251,9 +234,11 @@ impl MidiTake {
 		assert!(position >= self.playback_position);
 
 		loop {
-			match self.events.peek( |event| event.timestamp >= position ) {
-				None | Some(true) => { break; }
-				Some(false) => { self.events.next(|_|{}); }
+			if let Some(_) = self.events.peek().filter(|event| event.timestamp < position) {
+				self.events.next();
+			}
+			else {
+				break;
 			}
 		}
 

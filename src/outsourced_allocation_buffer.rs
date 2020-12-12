@@ -1,11 +1,24 @@
 use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListLink};
-use std::cell::RefCell;
+use std::cell::UnsafeCell;
 use ringbuf::RingBuffer;
 use std::thread;
 
 struct BufferFragment<T> {
 	link: LinkedListLink,
-	buf: RefCell<Vec<T>>,
+
+	/** Accesses to this UnsafeCell value are safe, as long either
+	  * a) no reference to contained data is handed out or
+	  * b) any reference handed out borrows on `BufferFragment` or
+	  * c) any mutable reference handed out borrows mutably
+	  *
+	  * Reason: `Buffer` is Send, but not Sync, so no concurrent
+	  * accesses from multiple threads can happen. The allocator
+	  * thread will never access data in the BufferFragments as soon
+	  * as they are enqueued in the actual Buffer. Any borrowing rules
+	  * violation of a) - c) would require a similar violation on
+	  * the `Buffer` object.
+	  */
+	buf: UnsafeCell<Vec<T>>,
 }
 intrusive_adapter!(BufferFragmentAdapter<T> = Box<BufferFragment<T>>: BufferFragment<T> { link: LinkedListLink });
 
@@ -55,7 +68,7 @@ impl<T: 'static + Send> Buffer<T> {
 		}
 		let node = Box::new(BufferFragment {
 			link: LinkedListLink::new(),
-			buf: RefCell::new(Vec::with_capacity(capacity_increment))
+			buf: UnsafeCell::new(Vec::with_capacity(capacity_increment))
 		});
 		let mut list = LinkedList::new(BufferFragmentAdapter::new());
 		list.push_back(node);
@@ -77,7 +90,7 @@ impl<T: 'static + Send> Buffer<T> {
 						ThreadRequest::Fragment => {
 							let fragment = Box::new(BufferFragment {
 								link: LinkedListLink::new(),
-								buf: RefCell::new(Vec::with_capacity(capacity_increment))
+								buf: UnsafeCell::new(Vec::with_capacity(capacity_increment))
 							});
 							// there is always enough space for pushing the fragment
 							incoming_producer.push(fragment).map_err(|_|()).unwrap();
@@ -106,7 +119,7 @@ impl<T: 'static + Send> Buffer<T> {
 	/// Checks if the buffer is empty
 	pub fn empty(&self) -> bool {
 		// fragments is never empty, but the Vec in fragments.front() may be
-		self.fragments.front().get().unwrap().buf.borrow().len() == 0
+		unsafe { (*self.fragments.front().get().unwrap().buf.get()).len() == 0 }
 	}
 
 	/// Rewind the iterator state to the beginning of the stored data.
@@ -123,7 +136,7 @@ impl<T: 'static + Send> Buffer<T> {
 
 	/// Execute func() on the current item (if there is one) and return the result.
 	/// If there is none, return None. Then advances the cursor to the next item
-	pub fn next<S,F: FnOnce(&T) -> S>(&mut self, func: F) -> Option<S> {
+	pub fn next<'a>(&mut self) -> Option<&'a T> {
 		if self.iter_cursor.is_null() {
 			return None;
 		}
@@ -133,11 +146,11 @@ impl<T: 'static + Send> Buffer<T> {
 		// Since list elements are only added, but never removed, and since iter_cursor
 		// has already belonged to the list when it was set, this is fine.
 		let mut cursor = unsafe{ self.fragments.cursor_from_ptr(self.iter_cursor) };
-		let buf = cursor.get().unwrap().buf.borrow();
+		let buf = unsafe {&*cursor.get().unwrap().buf.get() };
 	
 		// Perform the actual access. This is always a valid element because no elements can
 		// be deleted.
-		let result = func(&buf[self.iter_index]);
+		let result = &buf[self.iter_index];
 	
 		// Now advance the iterator
 		if self.iter_index + 1 < buf.len() {
@@ -149,10 +162,10 @@ impl<T: 'static + Send> Buffer<T> {
 		};
 
 		// And turn the borrowed cursor into a borrow-free pointer again
-		self.iter_cursor = 
+		self.iter_cursor =
 			match cursor.get() {
 				Some(frag) => {
-					assert!(frag.buf.borrow().len() > 0);
+					unsafe { assert!((*frag.buf.get()).len() > 0); }
 					frag
 				}
 				None => {
@@ -163,7 +176,7 @@ impl<T: 'static + Send> Buffer<T> {
 		return Some(result);
 	}
 
-	pub fn peek<S,F:FnOnce(&T) -> S>(&mut self, func: F) -> Option<S> {
+	pub fn peek<'a>(&'a mut self) -> Option<&'a T> {
 		if self.iter_cursor.is_null() {
 			return None;
 		}
@@ -173,13 +186,11 @@ impl<T: 'static + Send> Buffer<T> {
 		// Since list elements are only added, but never removed, and since iter_cursor
 		// has already belonged to the list when it was set, this is fine.
 		let cursor = unsafe{ self.fragments.cursor_from_ptr(self.iter_cursor) };
-		let buf = cursor.get().unwrap().buf.borrow();
+		let buf = unsafe { &*cursor.get().unwrap().buf.get() };
 	
 		// Perform the actual access. This is always a valid element because no elements can
 		// be deleted.
-		let result = func(&buf[self.iter_index]);
-
-		return Some(result);
+		return Some(&buf[self.iter_index]);
 	}
 
 	/// Tries to push elem into the buffer. Fails if no capacity is available, usually
@@ -187,7 +198,7 @@ impl<T: 'static + Send> Buffer<T> {
 	pub fn push(&mut self, elem: T) -> Result<(), T> {
 		let remaining = {
 			let frag = self.fragments.back_mut();
-			let buf = frag.get().unwrap().buf.borrow();
+			let buf = unsafe { &*frag.get().unwrap().buf.get() };
 			buf.capacity() - buf.len()
 		};
 
@@ -206,7 +217,9 @@ impl<T: 'static + Send> Buffer<T> {
 			}
 		}
 		
-		self.fragments.back_mut().get().unwrap().buf.borrow_mut().push(elem);
+		unsafe {
+			(*self.fragments.back_mut().get().unwrap().buf.get()).push(elem);
+		}
 
 		if remaining < self.remaining_threshold && !self.request_pending {
 			self.new_fragment_request_ringbuf.push(ThreadRequest::Fragment).map_err(|_|()).unwrap();
