@@ -12,6 +12,10 @@ impl MidiNoteRegistry {
 		MidiNoteRegistry { playing_notes: [[0u8;128]; 16] }
 	}
 
+	pub fn clear(&mut self) { // FIXME this is quite expensive
+		*self = MidiNoteRegistry::new();
+	}
+
 	pub fn register_event(&mut self, data: [u8; 3]) {
 		use MidiEvent::*;
 		match MidiEvent::parse(&data) {
@@ -54,13 +58,16 @@ impl MidiNoteRegistry {
 		}
 	}
 	pub fn send_noteoffs(&mut self, device: &mut impl MidiDeviceTrait) {
+		self.send_noteoffs_at(device, 0);
+	}
+	pub fn send_noteoffs_at(&mut self, device: &mut impl MidiDeviceTrait, timestamp: u32) {
 		// FIXME: queue_event could fail; better allow for a "second chance"
 		for channel in 0..16 {
 			for note in 0..128 {
 				let velocity = self.playing_notes[channel as usize][note as usize];
 				if velocity != 0 {
 					device.queue_event( MidiMessage {
-						timestamp: 0,
+						timestamp,
 						data: [0x80 | channel, note, 64],
 						datalen: 3
 					}).unwrap();
