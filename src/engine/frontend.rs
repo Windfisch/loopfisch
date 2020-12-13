@@ -162,7 +162,6 @@ impl FrontendThreadState {
 			unmuted_old: unmuted,
 			started_recording_at: 0,
 			playback_position: 0,
-			is_post_rewind_action_pending: false,
 			length: None,
 			recorded_length: 0,
 			note_registry: RefCell::new(MidiNoteRegistry::new())

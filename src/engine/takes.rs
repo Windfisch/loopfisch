@@ -125,7 +125,6 @@ pub struct MidiTake {
 	pub unmuted_old: bool,
 	pub started_recording_at: u32,
 	pub note_registry: RefCell<MidiNoteRegistry>, // this RefCell here SUCKS. TODO.
-	pub is_post_rewind_action_pending: bool
 }
 
 impl std::fmt::Debug for MidiTake {
@@ -163,35 +162,20 @@ impl MidiTake {
 		if let Some(length) = self.length {
 			self.handle_mute_change(device);
 
-			let curr_pos = self.playback_position;
-			let unmuted = self.unmuted;
 			let mut rewind_offset = 0;
 			loop {
 				let mut note_registry = self.note_registry.borrow_mut(); // TODO this SUCKS! oh god why, rust. this whole callback thing is garbage.
 
-				if self.is_post_rewind_action_pending {
-					assert!(rewind_offset >= curr_pos);
-					let relative_timestamp = rewind_offset - curr_pos + range.start;
-					assert!(relative_timestamp >= range.start);
-					assert!(relative_timestamp < range.end);
-					if unmuted {
-						note_registry.send_noteoffs_at(device, relative_timestamp);
-					}
-					note_registry.clear();
-					self.is_post_rewind_action_pending = false;
-					println!("\tpost rewind action was handled");
-				}
-
 				if let Some(event) = self.events.peek().filter(|event| event.timestamp < length) {
-					assert!(event.timestamp + rewind_offset >= curr_pos);
-					let relative_timestamp = event.timestamp + rewind_offset - curr_pos + range.start;
-					assert!(relative_timestamp >= range.start);
+					assert!(event.timestamp + rewind_offset >= self.playback_position);
+					let relative_timestamp = event.timestamp + rewind_offset - self.playback_position + range.start;
 
 					if relative_timestamp >= range.end {
 						break;
 					}
-					
-					if unmuted {
+				
+					assert!(range.contains(&relative_timestamp));
+					if self.unmuted {
 						device.queue_event(
 							MidiMessage {
 								timestamp: relative_timestamp,
@@ -206,12 +190,19 @@ impl MidiTake {
 				}
 				else {
 					// no (relevant) events left.
-					if rewind_offset + length <= self.playback_position + range.len() as u32 {
+					if rewind_offset + length < self.playback_position + range.len() as u32 {
 						// rewind only when the song actually passes the take length
 						println!("MIDI REWIND");
 						self.events.rewind();
-						self.is_post_rewind_action_pending = true;
 						rewind_offset += length;
+					
+						assert!(rewind_offset >= self.playback_position);
+						let relative_timestamp = rewind_offset - self.playback_position + range.start;
+						debug_assert!(range.contains(&relative_timestamp));
+						if self.unmuted {
+							note_registry.send_noteoffs_at(device, relative_timestamp);
+						}
+						note_registry.clear();
 					}
 					else {
 						// do not rewind yet when take length hasn't been exceeded yet (but the last note has)
