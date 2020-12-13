@@ -185,7 +185,7 @@ impl FrontendThreadState {
 	}
 
 	pub fn finish_miditake(&mut self, mididev_id: usize, take_id: u32, take_length: u32) -> Result<(),()> {
-		let take = &mut self.devices.get_mut(&mididev_id).unwrap().takes.get_mut(&take_id).unwrap(); // TODO propagate error
+		let take = &mut self.mididevices.get_mut(&mididev_id).unwrap().takes.get_mut(&take_id).unwrap(); // TODO propagate error
 		if take.length.is_some() {
 			return Err(());
 		}

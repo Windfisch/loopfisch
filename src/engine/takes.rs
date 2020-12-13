@@ -161,7 +161,6 @@ impl MidiTake {
 	/// `self.length` frames.
 	pub fn playback(&mut self, device: &mut impl MidiDeviceTrait, range: std::ops::Range<u32>) {
 		if let Some(length) = self.length {
-
 			self.handle_mute_change(device);
 
 			let curr_pos = self.playback_position;
@@ -171,14 +170,16 @@ impl MidiTake {
 				let mut note_registry = self.note_registry.borrow_mut(); // TODO this SUCKS! oh god why, rust. this whole callback thing is garbage.
 
 				if self.is_post_rewind_action_pending {
+					assert!(rewind_offset >= curr_pos);
 					let relative_timestamp = rewind_offset - curr_pos + range.start;
-					if relative_timestamp < range.end {
-						if unmuted {
-							note_registry.send_noteoffs_at(device, relative_timestamp);
-						}
-						note_registry.clear();
-						self.is_post_rewind_action_pending = false;
+					assert!(relative_timestamp >= range.start);
+					assert!(relative_timestamp < range.end);
+					if unmuted {
+						note_registry.send_noteoffs_at(device, relative_timestamp);
 					}
+					note_registry.clear();
+					self.is_post_rewind_action_pending = false;
+					println!("\tpost rewind action was handled");
 				}
 
 				if let Some(event) = self.events.peek().filter(|event| event.timestamp < length) {
@@ -204,15 +205,20 @@ impl MidiTake {
 					self.events.next();
 				}
 				else {
-					self.events.rewind();
-					rewind_offset += length;
-					if rewind_offset - curr_pos + range.start >= range.end {
+					// no (relevant) events left.
+					if rewind_offset + length <= self.playback_position + range.len() as u32 {
+						// rewind only when the song actually passes the take length
+						println!("MIDI REWIND");
+						self.events.rewind();
+						self.is_post_rewind_action_pending = true;
+						rewind_offset += length;
+					}
+					else {
+						// do not rewind yet when take length hasn't been exceeded yet (but the last note has)
 						break;
 					}
 				}
 			}
-
-			assert!(self.playback_position + range.len() as u32 - rewind_offset == (self.playback_position + range.len() as u32) % length);
 		}
 
 		self.playback_position += range.len() as u32;
