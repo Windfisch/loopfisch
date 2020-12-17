@@ -142,9 +142,9 @@ impl<'a> Iterator for MySliceIter<'a> {
 
 pub struct MyOtherSliceIter<'a>(&'a jack::ProcessScope, std::slice::IterMut<'a, AudioChannel>);
 impl<'a> Iterator for MyOtherSliceIter<'a> {
-	type Item = &'a mut [f32];
+	type Item = (&'a mut [f32], &'a [f32]);
 	fn next(&mut self) -> Option<Self::Item> {
-		self.1.next().map(|channel| channel.out_port.as_mut_slice(self.0))
+		self.1.next().map(|channel| (channel.out_port.as_mut_slice(self.0), channel.in_port.as_slice(self.0)) )
 	}
 }
 
@@ -168,7 +168,7 @@ impl AudioDeviceTrait for AudioDevice {
 		self.channels[0].in_port.get_latency_range(jack::LatencyType::Capture).1
 	}
 
-	fn playback_buffers(&'a mut self, scope: &'a jack::ProcessScope) -> Self::MutSliceIter<'a> {
+	fn playback_and_capture_buffers(&'a mut self, scope: &'a jack::ProcessScope) -> Self::MutSliceIter<'a> {
 		MyOtherSliceIter(scope, self.channels.iter_mut())
 	}
 

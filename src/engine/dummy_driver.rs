@@ -1,6 +1,9 @@
 use crate::midi_message::MidiMessage;
 use super::driver_traits::*;
 
+use std::slice::*;
+use std::iter::*;
+
 pub struct DummyMidiDevice {
 	queue: Vec<MidiMessage>,
 	pub committed: Vec<MidiMessage>,
@@ -60,7 +63,7 @@ impl TimestampedMidiEvent for DummyMidiEvent {
 
 impl MidiDeviceTrait for &mut DummyMidiDevice {
 	type Event<'a> = DummyMidiEvent;
-	type EventIterator<'a> = std::iter::Cloned<std::slice::Iter<'a, DummyMidiEvent>>;
+	type EventIterator<'a> = Cloned<Iter<'a, DummyMidiEvent>>;
 	type Scope = DummyScope;
 
 	fn incoming_events(&'a self, scope: &'a Self::Scope) -> Self::EventIterator<'a> { unimplemented!(); }
@@ -97,7 +100,7 @@ pub struct DummyAudioDevice {
 	pub capture_buffers: Vec<Vec<f32>>,
 }
 
-pub struct CaptureIter<'a>(std::slice::Iter<'a, Vec<f32>>, usize);
+pub struct CaptureIter<'a>(Iter<'a, Vec<f32>>, usize);
 impl<'a> Iterator for CaptureIter<'a> {
 	type Item = &'a [f32];
 	fn next(&mut self) -> Option<Self::Item> {
@@ -105,11 +108,11 @@ impl<'a> Iterator for CaptureIter<'a> {
 	}
 }
 
-pub struct PlaybackIter<'a>(std::slice::IterMut<'a, Vec<f32>>, usize);
-impl<'a> Iterator for PlaybackIter<'a> {
-	type Item = &'a mut [f32];
+pub struct PlaybackCaptureIter<'a>(Zip<IterMut<'a, Vec<f32>>, Iter<'a, Vec<f32>>>, usize);
+impl<'a> Iterator for PlaybackCaptureIter<'a> {
+	type Item = (&'a mut [f32], &'a [f32]);
 	fn next(&mut self) -> Option<Self::Item> {
-		self.0.next().map(|vec| &mut vec[self.1..])
+		self.0.next().map(|x| (&mut x.0[self.1..], &x.1[self.1..]) )
 	}
 }
 
@@ -126,17 +129,20 @@ impl DummyAudioDevice {
 
 impl AudioDeviceTrait for DummyAudioDevice {
 	type Scope = DummyScope;
-	type MutSliceIter<'a> = PlaybackIter<'a>;
+	type MutSliceIter<'a> = PlaybackCaptureIter<'a>;
 	type SliceIter<'a> = CaptureIter<'a>;
 
 	fn info(&self) -> AudioDeviceInfo { unimplemented!(); }
 	fn playback_latency(&self) -> u32 { self.playback_latency }
 	fn capture_latency(&self) -> u32 { self.capture_latency }
-	fn playback_buffers(&mut self, scope: &DummyScope) -> PlaybackIter {
+	fn playback_and_capture_buffers(&mut self, scope: &DummyScope) -> PlaybackCaptureIter {
 		for vec in self.playback_buffers.iter_mut() {
 			vec.resize((scope.time + scope.n_frames) as usize, 0.0);
 		}
-		PlaybackIter(self.playback_buffers.iter_mut(), scope.time as usize)
+		for vec in self.capture_buffers.iter_mut() {
+			vec.resize((scope.time + scope.n_frames) as usize, 0.0);
+		}
+		PlaybackCaptureIter(self.playback_buffers.iter_mut().zip(self.capture_buffers.iter()), scope.time as usize)
 	}
 	fn record_buffers(&self, scope: &DummyScope) -> CaptureIter {
 		CaptureIter(self.capture_buffers.iter(), scope.time as usize)

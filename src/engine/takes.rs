@@ -43,9 +43,9 @@ impl AudioTake {
 	pub fn playback<T: AudioDeviceTrait>(&mut self, scope: &T::Scope, device: &mut T, range_u32: std::ops::Range<u32>) {
 		if let Some(length) = self.length {
 			let range = range_u32.start as usize .. range_u32.end as usize;
-			for (channel_buffer, channel_slice) in self.samples.iter_mut().zip(device.playback_buffers(scope)) {
+			for (channel_buffer, channel_slices) in self.samples.iter_mut().zip(device.playback_and_capture_buffers(scope)) {
 				let mut position = self.playback_position;
-				let buffer = &mut channel_slice[range.clone()];
+				let buffer = &mut channel_slices.0[range.clone()];
 				for d in buffer {
 					if position >= length {
 						channel_buffer.rewind();

@@ -21,13 +21,13 @@ pub trait TimestampedMidiEvent {
 
 pub trait AudioDeviceTrait {
 	type SliceIter<'a>: Iterator<Item = &'a [f32]>;
-	type MutSliceIter<'a>: Iterator<Item = &'a mut [f32]>;
+	type MutSliceIter<'a>: Iterator<Item = (&'a mut [f32], &'a [f32])>;
 	type Scope: ProcessScopeTrait;
 
 	fn info(&self) -> AudioDeviceInfo;
 	fn playback_latency(&self) -> u32;
 	fn capture_latency(&self) -> u32;
-	fn playback_buffers(&'a mut self, scope: &'a Self::Scope) -> Self::MutSliceIter<'a>;
+	fn playback_and_capture_buffers(&'a mut self, scope: &'a Self::Scope) -> Self::MutSliceIter<'a>;
 	fn record_buffers(&'a self, scope: &'a Self::Scope) -> Self::SliceIter<'a>;
 }
 

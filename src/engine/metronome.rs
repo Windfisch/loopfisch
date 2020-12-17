@@ -22,9 +22,9 @@ impl<T: AudioDeviceTrait> AudioMetronome<T> {
 		if !self.unmuted { return; }
 		let period = ceil_div(song_length, beats);
 		let latency = self.device.playback_latency();
-		for buffer in self.device.playback_buffers(scope) {
+		for buffers in self.device.playback_and_capture_buffers(scope) {
 			for i in 0..scope.n_frames() {
-				buffer[i as usize] = self.volume * Self::process_one((position + i + latency) % song_length, period, beats, sample_rate);
+				buffers.0[i as usize] = self.volume * Self::process_one((position + i + latency) % song_length, period, beats, sample_rate);
 			}
 		}
 	}
