@@ -31,7 +31,13 @@ module.exports = {
 			else {
 				alert("Failed to create chain!");
 			}
-
+		},
+		async restart_transport() {
+			await fetch("http://localhost:8000/api/synths/" + this.id + "/restart_transport", {
+				method: 'POST',
+				redirect: 'follow',
+				mode: 'cors'
+			});
 		}
 	}
 }
@@ -42,6 +48,7 @@ module.exports = {
 		<div class="header">
 			<h1>{{name}} ({{id}})</h1>
 			<div style="flex-grow: 2"></div>
+			<button v-on:click="restart_transport">Restart transport</button>
 			<button v-on:click="add_chain_clicked">Add chain</button>
 		</div>
 		<div>

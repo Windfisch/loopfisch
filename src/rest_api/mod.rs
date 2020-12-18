@@ -136,7 +136,7 @@ pub async fn launch_server(engine: FrontendThreadState, event_channel_: realtime
 			takes_get, takes_get_one,
 			patch_synths, patch_synth, post_synth,
 			patch_chains, patch_chain, post_chain,
-			patch_takes, patch_take, post_take, post_take_finish_recording
+			patch_takes, patch_take, post_take, post_take_finish_recording, post_restart_transport
 		])
 		.register(catchers![not_found])
 		.attach(cors::CORS())

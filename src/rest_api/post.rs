@@ -54,6 +54,17 @@ pub async fn post_synth(state: State<'_, std::sync::Arc<GuiState>>, data: Json<S
 	}
 }
 
+#[post("/synths/<synthid>/restart_transport")]
+pub async fn post_restart_transport(state: State<'_, std::sync::Arc<GuiState>>, synthid: u32) -> Result<rocket::response::status::Accepted<()>, Status> {
+	let mut guard_ = state.mutex.lock().await;
+	let guard = &mut *guard_;
+	if let Some(synth) = guard.synths.iter_mut().find(|s| s.id == synthid) {
+		guard.engine.restart_midi_transport(synth.engine_mididevice_id);
+		return Ok(rocket::response::status::Accepted(None));
+	}
+	Err(Status::NotFound)
+}
+
 #[post("/synths/<synthid>/chains", data="<data>")]
 pub async fn post_chain(state: State<'_, std::sync::Arc<GuiState>>, synthid: u32, data: Json<ChainPost>) -> Result<rocket::response::status::Created<()>, Status> {
 	let mut guard_ = state.mutex.lock().await;

@@ -60,9 +60,23 @@ impl AudioDeviceSettings {
 	}
 }
 
+pub struct MidiDeviceSettings {
+	start_transport_pending: bool,
+	stop_transport_pending: bool
+}
+
+impl MidiDeviceSettings {
+	pub fn new() -> MidiDeviceSettings {
+		MidiDeviceSettings {
+			start_transport_pending: true,
+			stop_transport_pending: true
+		}
+	}
+}
+
 pub struct AudioThreadState {
 	devices: Vec<Option<(AudioDevice, AudioDeviceSettings)>>,
-	mididevices: Vec<Option<MidiDevice>>,
+	mididevices: Vec<Option<(MidiDevice, MidiDeviceSettings)>>,
 	metronome: AudioMetronome<AudioDevice>,
 	midiclock: MidiClock<MidiDevice>,
 	audiotakes: LinkedList<AudioTakeAdapter>,
@@ -107,7 +121,7 @@ impl AudioThreadState {
 
 		AudioThreadState {
 			devices: pad_option_vec(audiodevices.into_iter().map(|d| (d, AudioDeviceSettings::new())), 32),
-			mididevices: pad_option_vec(mididevices.into_iter(), 32),
+			mididevices: pad_option_vec(mididevices.into_iter().map(|d| (d, MidiDeviceSettings::new())), 32),
 			metronome,
 			midiclock,
 			audiotakes: LinkedList::new(AudioTakeAdapter::new()),
@@ -186,7 +200,7 @@ impl AudioThreadState {
 								self.destructor_thread_handle.thread().unpark();
 							}
 						}
-						Message::UpdateMidiDevice(id, mut device) => {
+						Message::UpdateMidiDevice(id, device) => {
 							// FrontendThreadState has verified that audiodev_id isn't currently used by any take
 							if cfg!(debug_assertions) {
 								for take in self.miditakes.iter() {
@@ -194,9 +208,10 @@ impl AudioThreadState {
 								}
 							}
 
-							std::mem::swap(&mut self.mididevices[id], &mut device);
+							let mut devtuple = device.map(|d| (d, MidiDeviceSettings::new()));
+							std::mem::swap(&mut self.mididevices[id], &mut devtuple);
 
-							if let Some(old) = device {
+							if let Some((old, _)) = devtuple {
 								println!("submitting deconstruction request");
 								if self.destructor_channel.push(DestructionRequest::MidiDevice(old)).is_err() {
 									panic!("Failed to submit deconstruction request");
@@ -206,6 +221,10 @@ impl AudioThreadState {
 						}
 						Message::SetAudioEcho(id, echo) => {
 							self.devices[id].as_mut().unwrap().1.echo = echo;
+						}
+						Message::RestartMidiTransport(id) => {
+							self.mididevices[id].as_mut().unwrap().1.start_transport_pending = true;
+							self.mididevices[id].as_mut().unwrap().1.stop_transport_pending = true;
 						}
 						Message::NewAudioTake(take) => {
 							println!("\ngot take");
@@ -277,14 +296,33 @@ impl AudioThreadState {
 		let mut cursor = self.miditakes.front();
 		while let Some(node) = cursor.get() {
 			let mut t = node.take.borrow_mut();
-			let dev = self.mididevices[t.mididev_id].as_mut().unwrap();
+			let dev = &mut self.mididevices[t.mididev_id].as_mut().unwrap().0;
 			t.playback(dev, 0..scope.n_frames()); // handles finishing recording and wrapping around.
 			cursor.move_next();
 		}
 
-		for dev in self.mididevices.iter_mut() {
-			if let Some(d) = dev {
-				d.commit_out_buffer(scope);
+		for d in self.mididevices.iter_mut() {
+			if let Some((dev,data)) = d {
+				if data.stop_transport_pending {
+					dev.queue_event( crate::midi_message::MidiMessage {
+						timestamp: 0,
+						data: [0xFC, 0, 0],
+						datalen: 1
+					});
+					data.stop_transport_pending = false;
+				}
+				if data.start_transport_pending {
+					let time_until_action = self.song_length - (self.song_position + dev.capture_latency()) % self.song_length;
+					if time_until_action < scope.n_frames() {
+						dev.queue_event( crate::midi_message::MidiMessage {
+							timestamp: time_until_action,
+							data: [0xFA, 0, 0],
+							datalen: 1
+						});
+						data.start_transport_pending = false;
+					}
+				}
+				dev.commit_out_buffer(scope);
 			}
 		}
 	}
@@ -333,7 +371,7 @@ impl AudioThreadState {
 		let mut cursor = self.miditakes.front();
 		while let Some(node) = cursor.get() {
 			let mut t = node.take.borrow_mut();
-			let dev = self.mididevices[t.mididev_id].as_ref().unwrap();
+			let dev = &self.mididevices[t.mididev_id].as_ref().unwrap().0;
 		
 			let (song_wraps, song_wraps_at) = check_wrap(
 				self.song_position as i32 - dev.capture_latency() as i32,
@@ -367,7 +405,7 @@ impl AudioThreadState {
 		}
 
 		for dev_opt in self.mididevices.iter_mut() {
-			if let Some(dev) = dev_opt {
+			if let Some((dev, _data)) = dev_opt {
 				dev.update_registry(scope);
 			}
 		}

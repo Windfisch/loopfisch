@@ -127,6 +127,11 @@ impl FrontendThreadState {
 		}
 	}
 
+	pub fn restart_midi_transport(&mut self, mididev_id: usize) -> Result<(),()> {
+		self.command_channel.send_message(Message::RestartMidiTransport(mididev_id))?;
+		Ok(())
+	}
+
 	pub fn set_audiodevice_echo(&mut self, audiodev_id: usize, echo: bool) -> Result<(),()> {
 		self.command_channel.send_message(Message::SetAudioEcho(audiodev_id, echo))?;
 		Ok(())
