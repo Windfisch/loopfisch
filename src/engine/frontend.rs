@@ -127,6 +127,11 @@ impl FrontendThreadState {
 		}
 	}
 
+	pub fn set_audiodevice_echo(&mut self, audiodev_id: usize, echo: bool) -> Result<(),()> {
+		self.command_channel.send_message(Message::SetAudioEcho(audiodev_id, echo))?;
+		Ok(())
+	}
+
 	pub fn add_audiotake(&mut self, audiodev_id: usize, unmuted: bool) -> Result<u32,()> {
 		let id = self.next_id.gen();
 

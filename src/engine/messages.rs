@@ -9,6 +9,7 @@ pub enum Message {
 	UpdateMidiDevice(usize, Option<MidiDevice>),
 	NewAudioTake(Box<AudioTakeNode>),
 	NewMidiTake(Box<MidiTakeNode>),
+	SetAudioEcho(usize, bool),
 	SetAudioMute(u32,bool),
 	SetMidiMute(u32,bool),
 	FinishAudioTake(u32, u32),

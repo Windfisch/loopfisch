@@ -95,6 +95,31 @@ module.exports = {
 			}
 			this.send_mute_patch(take);
 		},
+		toggle_echo: async function() {
+			console.log(this.model.echo);
+			this.model.echo = !this.model.echo;
+
+			for (var chain of this.$parent.model.chains) {
+				if (chain != this.model) {
+					chain.echo = false;
+				}
+			}
+			
+			var patch = [];
+			for (var chain of this.$parent.model.chains) {
+				patch.push({id: chain.id, echo: chain.echo});
+			}
+
+			var req = await fetch(
+				"http://localhost:8000/api/synths/" + this.synthid
+				+ "/chains", {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				redirect: 'follow',
+				mode: 'cors',
+				body: JSON.stringify(patch)
+			});
+		},
 		send_mute_patch: async function(take) {
 			var synthid = this.$parent.model.id;
 			var chainid = this.model.id;
@@ -153,6 +178,7 @@ module.exports = {
 			<div class="header">
 				<h1>{{name}}</h1>
 				<div style="flex-grow: 2"></div>
+				<button v-bind:style="'background-color: ' + (model.echo ? 'lightpink;' : 'white;')" v-on:click="toggle_echo">echo</button>
 				<button v-if="needs_show_midi_button()" v-on:click="showhidemidi">{{ show_midi ? 'hide midi' : 'show midi' }}</button>
 				<button v-on:click="record_audio">{{ has_recording_takes ? "stop rec" : "rec audio" }}</button>
 				<button v-on:click="record_midi">{{ has_recording_takes ? "stop rec" : "rec midi" }}</button>

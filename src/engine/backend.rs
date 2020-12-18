@@ -48,8 +48,20 @@ macro_rules! for_take {
 	}}
 }
 
+pub struct AudioDeviceSettings {
+	echo: bool
+}
+
+impl AudioDeviceSettings {
+	pub fn new() -> AudioDeviceSettings {
+		AudioDeviceSettings {
+			echo: false
+		}
+	}
+}
+
 pub struct AudioThreadState {
-	devices: Vec<Option<AudioDevice>>,
+	devices: Vec<Option<(AudioDevice, AudioDeviceSettings)>>,
 	mididevices: Vec<Option<MidiDevice>>,
 	metronome: AudioMetronome<AudioDevice>,
 	midiclock: MidiClock<MidiDevice>,
@@ -94,8 +106,8 @@ impl AudioThreadState {
 		});
 
 		AudioThreadState {
-			devices: pad_option_vec(audiodevices, 32),
-			mididevices: pad_option_vec(mididevices, 32),
+			devices: pad_option_vec(audiodevices.into_iter().map(|d| (d, AudioDeviceSettings::new())), 32),
+			mididevices: pad_option_vec(mididevices.into_iter(), 32),
 			metronome,
 			midiclock,
 			audiotakes: LinkedList::new(AudioTakeAdapter::new()),
@@ -155,17 +167,18 @@ impl AudioThreadState {
 							self.song_length = song_length;
 							self.n_beats = n_beats;
 						}
-						Message::UpdateAudioDevice(id, mut device) => {
+						Message::UpdateAudioDevice(id, device) => {
 							// FrontendThreadState has verified that audiodev_id isn't currently used by any take
 							if cfg!(debug_assertions) {
 								for take in self.audiotakes.iter() {
 									debug_assert!(take.take.borrow().audiodev_id != id);
 								}
 							}
-
-							std::mem::swap(&mut self.devices[id], &mut device);
 							
-							if let Some(old) = device {
+							let mut devtuple = device.map(|d| (d, AudioDeviceSettings::new()));
+							std::mem::swap(&mut self.devices[id], &mut devtuple);
+							
+							if let Some((old, _)) = devtuple {
 								println!("submitting deconstruction request");
 								if self.destructor_channel.push(DestructionRequest::AudioDevice(old)).is_err() {
 									panic!("Failed to submit deconstruction request");
@@ -190,6 +203,9 @@ impl AudioThreadState {
 								}
 								self.destructor_thread_handle.thread().unpark();
 							}
+						}
+						Message::SetAudioEcho(id, echo) => {
+							self.devices[id].as_mut().unwrap().1.echo = echo;
 						}
 						Message::NewAudioTake(take) => {
 							println!("\ngot take");
@@ -239,7 +255,12 @@ impl AudioThreadState {
 	fn process_audio_playback(&mut self, scope: &jack::ProcessScope) {
 		for dev in self.devices.iter_mut() {
 			if let Some(d) = dev {
-				play_silence(scope,d,0..scope.n_frames());
+				if d.1.echo {
+					play_echo(scope, &mut d.0);
+				}
+				else {
+					play_silence(scope,&mut d.0,0..scope.n_frames());
+				}
 			}
 		}
 
@@ -247,7 +268,7 @@ impl AudioThreadState {
 		while let Some(node) = cursor.get() {
 			let mut t = node.take.borrow_mut();
 			let dev = self.devices[t.audiodev_id].as_mut().unwrap();
-			t.playback(scope,dev, 0..scope.n_frames()); // handles finishing recording and wrapping around.
+			t.playback(scope, &mut dev.0, 0..scope.n_frames()); // handles finishing recording and wrapping around.
 			cursor.move_next();
 		}
 	}
@@ -274,7 +295,7 @@ impl AudioThreadState {
 		let mut cursor = self.audiotakes.front();
 		while let Some(node) = cursor.get() {
 			let mut t = node.take.borrow_mut();
-			let dev = self.devices[t.audiodev_id].as_ref().unwrap();
+			let dev = &mut self.devices[t.audiodev_id].as_mut().unwrap().0;
 			
 			let (song_wraps, song_wraps_at) = check_wrap(
 				self.song_position as i32 - dev.capture_latency() as i32,
@@ -353,6 +374,12 @@ impl AudioThreadState {
 	}
 }
 
+fn play_echo<'a, T: AudioDeviceTrait>(scope: &'a T::Scope, device: &'a mut T) {
+	for (output, input) in device.playback_and_capture_buffers(scope) {
+		output.copy_from_slice(input);
+	}
+}
+
 fn play_silence<'a, T: AudioDeviceTrait>(scope: &'a T::Scope, device: &'a mut T, range_u32: std::ops::Range<u32>) {
 	let range = range_u32.start as usize .. range_u32.end as usize;
 	for channel_slices in device.playback_and_capture_buffers(scope) {
@@ -363,10 +390,10 @@ fn play_silence<'a, T: AudioDeviceTrait>(scope: &'a T::Scope, device: &'a mut T,
 	}
 }
 
-fn pad_option_vec<T>(vec: Vec<T>, size: usize) -> Vec<Option<T>> {
-	let n = vec.len();
-	vec.into_iter().map(|v| Some(v))
-		.chain( (n..size).map(|_| None) )
+fn pad_option_vec<T: Iterator>(iter: T, size: usize) -> Vec<Option<T::Item>> {
+	iter.map(|v| Some(v))
+		.chain( (0..).map(|_| None) )
+		.take(size)
 		.collect()
 }
 

@@ -31,6 +31,7 @@ var app2 = new Vue({
 					{
 						name: "Pad",
 						midi: true,
+						echo: false,
 						takes: [
 							{
 								id: 0,
@@ -67,6 +68,7 @@ var app2 = new Vue({
 					{
 						name: "Lead",
 						midi: true,
+						echo: false,
 						takes: [
 							{
 								id: 0,
@@ -80,6 +82,7 @@ var app2 = new Vue({
 					{
 						name: "Bass",
 						midi: true,
+						echo: false,
 						takes: [
 							{
 								id: 0,
@@ -135,6 +138,7 @@ var app2 = new Vue({
 					{
 						name: "Something",
 						midi: true,
+						echo: false,
 						takes: [
 							{
 								id: 0,
@@ -154,6 +158,7 @@ var app2 = new Vue({
 					{
 						name: "Distorted",
 						midi: false,
+						echo: false,
 						takes: [
 							{
 								id: 0,
@@ -176,6 +181,7 @@ var app2 = new Vue({
 					{
 						name: "Clean",
 						midi: false,
+						echo: false,
 						takes: [
 							{
 								id: 0,
@@ -316,7 +322,7 @@ function apply_patch(patch) {
 		[
 			[
 				"chains",
-				["name", "midi", "audiomute", "midimute"],
+				["name", "midi", "audiomute", "midimute", "echo"],
 				[
 					["takes", ["name", "type", "state", "associated_midi_takes", "muted", "muted_scheduled"], []]
 				]

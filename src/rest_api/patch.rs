@@ -49,7 +49,8 @@ pub struct SynthPatch {
 pub struct ChainPatch {
 	id: u32,
 	name: Option<String>,
-	takes: Option<Vec<TakePatch>>
+	takes: Option<Vec<TakePatch>>,
+	echo: Option<bool>
 }
 
 #[derive(Deserialize,Clone)]
@@ -193,6 +194,10 @@ fn patch_chain_(engine: &mut FrontendThreadState, mididevice_id: usize, chains: 
 		if !check {
 			if let Some(name) = &patch.name {
 				chain_to_patch.name = name.clone();
+			}
+			if let Some(echo) = patch.echo {
+				chain_to_patch.echo = echo;
+				engine.set_audiodevice_echo(chain_to_patch.engine_audiodevice_id, echo);
 			}
 		}
 
