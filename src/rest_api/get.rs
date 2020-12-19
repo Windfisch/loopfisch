@@ -7,9 +7,9 @@ pub async fn song_get(state: State<'_, std::sync::Arc<GuiState>>) -> Json<Song> 
 	let lock = state.mutex.lock().await;
 	let e = &lock.engine;
 	Json(Song {
-		song_position: e.song_position() as f32 / e.sample_rate() as f32,
-		transport_position: e.transport_position() as f32 / e.sample_rate() as f32,
-		loop_length: e.loop_length() as f32 / e.sample_rate() as f32,
+		song_position: e.song_position() as f64 / e.sample_rate() as f64,
+		transport_position: e.transport_position() as f64 / e.sample_rate() as f64,
+		loop_length: e.loop_length() as f64 / e.sample_rate() as f64,
 		playing: true
 	})
 }

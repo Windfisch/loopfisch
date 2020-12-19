@@ -180,6 +180,7 @@ impl AudioThreadState {
 							assert!(self.audiotakes.is_empty() && self.miditakes.is_empty());
 							self.song_length = song_length;
 							self.n_beats = n_beats;
+							self.transport_position = 0;
 						}
 						Message::UpdateAudioDevice(id, device) => {
 							// FrontendThreadState has verified that audiodev_id isn't currently used by any take
@@ -345,7 +346,7 @@ impl AudioThreadState {
 				if let Some(length) = t.length {
 					if t.recorded_length >= length {
 						println!("\nFinished recording on device {}", t.audiodev_id);
-						self.event_channel.send_or_complain(Event::AudioTakeStateChanged(t.audiodev_id, t.id, RecordState::Finished, self.transport_position + song_wraps_at));
+						self.event_channel.send_or_complain(Event::AudioTakeStateChanged(t.audiodev_id, t.id, RecordState::Finished, t.started_recording_at + length));
 						t.record_state = Finished;
 					}
 				}
@@ -383,7 +384,7 @@ impl AudioThreadState {
 				if let Some(length) = t.length {
 					if t.recorded_length >= length {
 						println!("\nFinished recording on device {}", t.mididev_id);
-						self.event_channel.send_or_complain(Event::MidiTakeStateChanged(t.mididev_id, t.id, RecordState::Finished, self.transport_position + song_wraps_at));
+						self.event_channel.send_or_complain(Event::MidiTakeStateChanged(t.mididev_id, t.id, RecordState::Finished, t.started_recording_at + length));
 						t.record_state = Finished;
 					}
 				}

@@ -76,6 +76,13 @@ pub async fn launch_server(engine: FrontendThreadState, event_channel_: realtime
 					let mut guard = state2.mutex.lock().await;
 					if let Some((synthid, chainid, mut take)) = guard.find_audiotake_by_engine_id(dev_id, take_id) {
 						use crate::engine::RecordState;
+						if new_state == RecordState::Finished {
+							take.playing_since = Some(timestamp as f64 / sample_rate as f64);
+							take.duration = match take.state {
+								RecordingState::Recording(started_recording_at) => Some((timestamp - started_recording_at) as f64 / sample_rate as f64),
+								_ => unimplemented!()
+							};
+						}
 						take.state =
 							match new_state {
 								RecordState::Waiting => RecordingState::Waiting,
@@ -94,6 +101,13 @@ pub async fn launch_server(engine: FrontendThreadState, event_channel_: realtime
 					let mut guard = state2.mutex.lock().await;
 					if let Some((synthid, chainid, mut take)) = guard.find_miditake_by_engine_id(mididev_id, take_id) {
 						use crate::engine::RecordState;
+						if new_state == RecordState::Finished {
+							take.playing_since = Some(timestamp as f64 / sample_rate as f64);
+							take.duration = match take.state {
+								RecordingState::Recording(started_recording_at) => Some((timestamp - started_recording_at) as f64 / sample_rate as f64),
+								_ => unimplemented!()
+							};
+						}
 						take.state =
 							match new_state {
 								RecordState::Waiting => RecordingState::Waiting,

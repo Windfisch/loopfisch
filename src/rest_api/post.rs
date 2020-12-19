@@ -115,7 +115,9 @@ pub async fn post_take(state: State<'_, std::sync::Arc<GuiState>>, synthid: u32,
 				muted: false,
 				muted_scheduled: false,
 				state: RecordingState::Waiting,
-				associated_midi_takes: Vec::new()
+				playing_since: None,
+				duration: None,
+				associated_midi_takes: Vec::new(),
 			});
 			state.update_list.push(make_update_take(chain.takes.last().unwrap(), synthid, chainid)).await;
 
@@ -138,6 +140,8 @@ pub async fn post_take(state: State<'_, std::sync::Arc<GuiState>>, synthid: u32,
 					name,
 					muted: true,
 					muted_scheduled: false,
+					playing_since: None,
+					duration: None,
 					state: RecordingState::Waiting,
 					associated_midi_takes
 				});

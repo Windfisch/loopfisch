@@ -263,7 +263,7 @@ async function init() {
 
 	var response2 = await fetch("http://localhost:8000/api/song");
 	var song = await response2.json();
-	app2.playback_time_offset = (song.song_position || 0) - now();
+	app2.playback_time_offset = (song.transport_position || 0) - now();
 	app2.loop_length = song.loop_length;
 }
 
@@ -301,7 +301,7 @@ async function mainloop()
 				if (update.action.song !== undefined) {
 					if (update.action.song.song_position !== undefined) { // only update the time when the answer was really polled.
 						if (duration >= 0.1) {
-							app2.playback_time_offset = update.action.song.song_position - now();
+							app2.playback_time_offset = update.action.song.transport_position - now();
 						}
 						else {
 							console.log("ignoring timestamp which likely is stale");
@@ -324,7 +324,7 @@ function apply_patch(patch) {
 				"chains",
 				["name", "midi", "audiomute", "midimute", "echo"],
 				[
-					["takes", ["name", "type", "state", "associated_midi_takes", "muted", "muted_scheduled"], []]
+					["takes", ["name", "type", "state", "associated_midi_takes", "muted", "muted_scheduled", "playing_since", "duration"], []]
 				]
 			]
 		]

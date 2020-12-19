@@ -2,10 +2,10 @@ use serde::Serialize;
 
 #[derive(Serialize,Clone)]
 pub struct Song {
-	pub song_position: f32,
-	pub transport_position: f32,
+	pub song_position: f64,
+	pub transport_position: f64,
 	pub playing: bool,
-	pub loop_length: f32
+	pub loop_length: f64
 }
 
 #[derive(Serialize,Clone)]
@@ -76,6 +76,8 @@ pub struct Take {
 	pub muted: bool,
 	pub muted_scheduled: bool,
 	pub associated_midi_takes: Vec<u32>,
+	pub playing_since: Option<f64>,
+	pub duration: Option<f64>,
 }
 
 impl Take {

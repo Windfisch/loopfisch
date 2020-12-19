@@ -71,6 +71,10 @@ pub struct UpdateTake {
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub associated_midi_takes: Option<Vec<u32>>,
 	#[serde(skip_serializing_if = "Option::is_none")]
+	pub playing_since: Option<Option<f64>>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub duration: Option<Option<f64>>,
+	#[serde(skip_serializing_if = "Option::is_none")]
 	pub deleted: Option<bool>
 }
 
@@ -116,6 +120,8 @@ pub fn make_update_take(take: &Take, synthid: u32, chainid: u32) -> UpdateRoot {
 					muted: Some(take.muted),
 					muted_scheduled: Some(take.muted_scheduled),
 					associated_midi_takes: Some(take.associated_midi_takes.clone()),
+					playing_since: Some(take.playing_since),
+					duration: Some(take.duration),
 					..Default::default()
 				}]),
 				..Default::default()
