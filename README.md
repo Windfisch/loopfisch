@@ -5,8 +5,8 @@ An audio and MIDI loop machine written in Rust.
 
 This is still in active development, but the basic functionality already works.
 
-![test suite](https://github.com/Windfisch/loopfisch/workflows/test%20suite/badge.svg)
 ![build](https://github.com/Windfisch/loopfisch/workflows/build/badge.svg)
+![test suite](https://github.com/Windfisch/loopfisch/workflows/test%20suite/badge.svg)
 
 Features
 --------
