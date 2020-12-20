@@ -1,9 +1,12 @@
 loopfisch
 =========
 
-My attempts in writing a audio and MIDI loop machine in Rust.
+An audio and MIDI loop machine written in Rust.
 
-This is not yet a ready or usable piece of software. It is making progress, though.
+This is still in active development, but the basic functionality already works.
+
+![test suite](https://github.com/Windfisch/loopfisch/workflows/test%20suite/badge.svg)
+![build](https://github.com/Windfisch/loopfisch/workflows/build/badge.svg)
 
 Features
 --------
