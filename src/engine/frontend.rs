@@ -12,6 +12,8 @@ use super::jack_driver::*;
 use super::midi_registry::MidiNoteRegistry;
 use crate::outsourced_allocation_buffer::Buffer;
 
+const CHUNKSIZE: usize = 8*1024;
+
 pub struct GuiAudioTake {
 	pub id: u32,
 	pub audiodev_id: usize,
@@ -141,17 +143,7 @@ impl FrontendThreadState {
 		let id = self.next_id.gen();
 
 		let n_channels = self.devices[&audiodev_id].info.n_channels;
-		let take = AudioTake {
-			samples: (0..n_channels).map(|_| Buffer::new(1024*8,512*8)).collect(),
-			length: None,
-			recorded_length: 0,
-			playback_position: 0,
-			record_state: RecordState::Waiting,
-			id,
-			audiodev_id,
-			unmuted,
-			started_recording_at: 0
-		};
+		let take = AudioTake::new(id, audiodev_id, unmuted, n_channels, CHUNKSIZE);
 		let take_node = Box::new(AudioTakeNode::new(take));
 
 		self.command_channel.send_message(Message::NewAudioTake(take_node))?;
@@ -163,19 +155,7 @@ impl FrontendThreadState {
 	pub fn add_miditake(&mut self, mididev_id: usize, unmuted: bool) -> Result<u32,()> {
 		let id = self.next_id.gen();
 
-		let take = MidiTake {
-			events: Buffer::new(1024, 512),
-			record_state: RecordState::Waiting,
-			id,
-			mididev_id,
-			unmuted,
-			unmuted_old: unmuted,
-			started_recording_at: 0,
-			playback_position: 0,
-			length: None,
-			recorded_length: 0,
-			note_registry: RefCell::new(MidiNoteRegistry::new())
-		};
+		let take = MidiTake::new(id, mididev_id, unmuted);
 		let take_node = Box::new(MidiTakeNode::new(take));
 
 		self.command_channel.send_message(Message::NewMidiTake(take_node))?;

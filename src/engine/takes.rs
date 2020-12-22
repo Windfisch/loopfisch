@@ -40,6 +40,21 @@ impl std::fmt::Debug for AudioTake {
 }
 
 impl AudioTake {
+	/** not real-time-safe! */
+	pub fn new(id: u32, audiodev_id: usize, unmuted: bool, n_channels: usize, chunksize: usize) -> AudioTake {
+		AudioTake {
+			samples: (0..n_channels).map(|_| Buffer::new(chunksize,chunksize/2)).collect(),
+			length: None,
+			recorded_length: 0,
+			playback_position: 0,
+			record_state: RecordState::Waiting,
+			id,
+			audiodev_id,
+			unmuted,
+			started_recording_at: 0
+		}
+	}
+
 	pub fn playback<T: AudioDeviceTrait>(&mut self, scope: &T::Scope, device: &mut T, range_u32: std::ops::Range<u32>) {
 		if let Some(length) = self.length {
 			let range = range_u32.start as usize .. range_u32.end as usize;
@@ -143,6 +158,23 @@ impl std::fmt::Debug for MidiTake {
 
 
 impl MidiTake {
+	/** not real-time-safe! */
+	pub fn new(id: u32, mididev_id: usize, unmuted: bool) -> MidiTake {
+		MidiTake {
+			events: Buffer::new(1024, 512),
+			record_state: RecordState::Waiting,
+			id,
+			mididev_id,
+			unmuted,
+			unmuted_old: unmuted,
+			started_recording_at: 0,
+			playback_position: 0,
+			length: None,
+			recorded_length: 0,
+			note_registry: RefCell::new(MidiNoteRegistry::new())
+		}
+	}
+
 	fn handle_mute_change(&mut self, device: &mut impl MidiDeviceTrait) {
 		if self.unmuted != self.unmuted_old {
 			if self.unmuted {
