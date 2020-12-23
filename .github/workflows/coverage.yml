@@ -16,6 +16,8 @@ jobs:
       - name: Install dependencies
         run: sudo apt-get install libjack-dev
       - uses: actions/checkout@v2
+        with:
+          fetch-depth: 3
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
