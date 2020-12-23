@@ -363,3 +363,255 @@ impl MidiTakeNode {
 
 intrusive_adapter!(pub AudioTakeAdapter = Box<AudioTakeNode>: AudioTakeNode { link: LinkedListLink });
 intrusive_adapter!(pub MidiTakeAdapter = Box<MidiTakeNode>: MidiTakeNode { link: LinkedListLink });
+
+
+#[cfg(test)]
+mod tests {
+	use super::super::dummy_driver::*;
+	use super::*;
+
+	struct XorShift {
+		state: u64
+	}
+
+	impl Iterator for XorShift {
+		type Item = f32;
+		fn next(&mut self) -> Option<f32> {
+			self.state ^= self.state << 13;
+			self.state ^= self.state >> 17;
+			self.state ^= self.state << 5;
+			Some(self.state as f32 / 0x8000_0000_0000_0000u64 as f32 - 1.0)
+		}
+	}
+
+	fn rand_iter(seed: u32) -> XorShift {
+		let mut iter = XorShift { state: seed as u64 | (((seed ^ 0xDEADBEEF) as u64) << 32) };
+		for _ in 0..16 {
+			iter.next();
+		}
+		return iter;
+	}
+
+	fn rand_vec(seed: u32, length: usize) -> Vec<f32> {
+		rand_iter(seed).take(length).collect()
+	}
+
+	fn prepare() -> (AudioTake, DummyScope, DummyAudioDevice) {
+		const HUGE_CHUNKSIZE: usize = 100000;
+		let t = AudioTake::new(0, 0, false, 2, HUGE_CHUNKSIZE);
+		let scope = DummyScope::new();
+		let mut dev = DummyAudioDevice::new(2, 0, 0);
+
+		dev.capture_buffers[0] = rand_vec(1337, 44100);
+		dev.capture_buffers[1] = rand_vec(42, 44100);
+
+		return (t, scope, dev);
+	}
+
+	#[test]
+	pub fn audiotake_with_unknown_length_plays_silence() {
+		let (mut t, mut scope, mut dev) = prepare();
+
+		scope.run_for(44100, 1024, |scope| {
+			t.record(scope, &dev, 0..scope.n_frames());
+		});
+
+		scope.run_for(44100, 1024, |scope| {
+			t.playback(scope, &mut dev, 0..scope.n_frames());
+		});
+
+		assert!(dev.playback_buffers[0].iter().all(|x| *x == 0.0));
+		assert!(dev.playback_buffers[1].iter().all(|x| *x == 0.0));
+	}
+
+	#[test]
+	pub fn unmuted_audiotake_plays_back_recorded_audio() {
+		let (mut t, mut scope, mut dev) = prepare();
+
+		scope.run_for(44100, 1024, |scope| {
+			t.record(scope, &dev, 0..scope.n_frames());
+		});
+
+		t.length = Some(44100);
+		t.unmuted = true;
+		t.rewind();
+
+		scope.run_for(44100, 1024, |scope| {
+			t.playback(scope, &mut dev, 0..scope.n_frames());
+		});
+
+		let offset = 44100;
+		assert!(dev.capture_buffers[0].len() == dev.capture_buffers[1].len());
+		assert!(dev.playback_buffers[0][offset..] == dev.capture_buffers[0][0..offset]);
+		assert!(dev.playback_buffers[1][offset..] == dev.capture_buffers[1][0..offset]);
+	}
+	
+	#[test]
+	pub fn unmuted_audiotake_plays_back_additively() {
+		let (mut t, mut scope, mut dev) = prepare();
+
+		scope.run_for(44100, 1024, |scope| {
+			t.record(scope, &dev, 0..scope.n_frames());
+		});
+
+		t.length = Some(44100);
+		t.unmuted = true;
+		t.rewind();
+
+		scope.run_for(44100, 1024, |scope| {
+			for (buf, _) in dev.playback_and_capture_buffers(scope) {
+				for v in buf.iter_mut() {
+					*v = 1.0;
+				}
+			}
+			t.playback(scope, &mut dev, 0..scope.n_frames());
+		});
+
+
+		let offset = 44100;
+		assert!(dev.capture_buffers[0].len() == dev.capture_buffers[1].len());
+		for i in 0..=1 {
+			assert!(
+				dev.playback_buffers[i][offset..].iter()
+				.zip( dev.capture_buffers[i][0..offset].iter().map(|x|x+1.0) )
+				.all( |tup| *tup.0 == tup.1 )
+			);
+		}
+	}
+	
+	#[test]
+	pub fn audiotake_rewind_works() {
+		let (mut t, mut scope, mut dev) = prepare();
+
+		scope.run_for(44100, 1024, |scope| {
+			t.record(scope, &dev, 0..scope.n_frames());
+		});
+
+		t.length = Some(44100);
+		t.unmuted = true;
+		t.rewind();
+
+		scope.run_for(1000, 1024, |scope| {
+			t.playback(scope, &mut dev, 0..scope.n_frames());
+		});
+
+		t.rewind();
+		
+		scope.run_for(1000, 1024, |scope| {
+			t.playback(scope, &mut dev, 0..scope.n_frames());
+		});
+
+		let offset = 44100;
+		assert!(dev.capture_buffers[0].len() == dev.capture_buffers[1].len());
+		for i in 0..=1 {
+			assert!(dev.playback_buffers[i][offset..offset+1000] == dev.capture_buffers[i][0..1000]);
+			assert!(dev.playback_buffers[i][offset+1000..offset+2000] == dev.capture_buffers[i][0..1000]);
+		}
+	}
+	
+	#[test]
+	pub fn audiotake_seek_works() {
+		let (mut t, mut scope, mut dev) = prepare();
+
+		scope.run_for(44100, 1024, |scope| {
+			t.record(scope, &dev, 0..scope.n_frames());
+		});
+
+		t.length = Some(44100);
+		t.unmuted = true;
+		t.rewind();
+
+		scope.run_for(1000, 1024, |scope| {
+			t.playback(scope, &mut dev, 0..scope.n_frames());
+		});
+
+		t.seek(3000); // seek forward
+		
+		scope.run_for(1000, 1024, |scope| {
+			t.playback(scope, &mut dev, 0..scope.n_frames());
+		});
+
+		t.seek(1000); // seek backward
+		
+		scope.run_for(1000, 1024, |scope| {
+			t.playback(scope, &mut dev, 0..scope.n_frames());
+		});
+
+		let offset = 44100;
+		assert!(dev.capture_buffers[0].len() == dev.capture_buffers[1].len());
+		for i in 0..=1 {
+			assert!(dev.playback_buffers[i][offset..offset+1000] == dev.capture_buffers[i][0..1000]);
+			assert!(dev.playback_buffers[i][offset+1000..offset+2000] == dev.capture_buffers[i][3000..4000]);
+			assert!(dev.playback_buffers[i][offset+2000..offset+3000] == dev.capture_buffers[i][1000..2000]);
+		}
+	}
+	
+	#[test]
+	pub fn muted_audiotake_plays_silence() {
+		let (mut t, mut scope, mut dev) = prepare();
+
+		scope.run_for(44100, 1024, |scope| {
+			t.record(scope, &dev, 0..scope.n_frames());
+		});
+
+		t.length = Some(44100);
+		t.unmuted = false;
+		t.rewind();
+
+		scope.run_for(44100, 1024, |scope| {
+			t.playback(scope, &mut dev, 0..scope.n_frames());
+		});
+
+		assert!(dev.capture_buffers[0].len() == dev.capture_buffers[1].len());
+		assert!(dev.playback_buffers[0].iter().all(|x| *x == 0.0));
+		assert!(dev.playback_buffers[1].iter().all(|x| *x == 0.0));
+	}
+	
+	#[test]
+	pub fn audiotake_past_the_end_loops() {
+		let (mut t, mut scope, mut dev) = prepare();
+
+		scope.run_for(44100, 1024, |scope| {
+			t.record(scope, &dev, 0..scope.n_frames());
+		});
+
+		t.length = Some(44100);
+		t.unmuted = true;
+		t.rewind();
+
+		scope.run_for(88200, 1024, |scope| {
+			t.playback(scope, &mut dev, 0..scope.n_frames());
+		});
+
+		let len = 44100;
+		assert!(dev.capture_buffers[0].len() == dev.capture_buffers[1].len());
+		assert!(dev.playback_buffers[0][len..len*2] == dev.capture_buffers[0][0..len]);
+		assert!(dev.playback_buffers[1][len..len*2] == dev.capture_buffers[1][0..len]);
+		assert!(dev.playback_buffers[0][len*2..] == dev.capture_buffers[0][0..len]);
+		assert!(dev.playback_buffers[1][len*2..] == dev.capture_buffers[1][0..len]);
+	}
+	
+	#[test]
+	pub fn audiotake_playback_can_be_interleaved_with_recording() {
+		let (mut t, mut scope, mut dev) = prepare();
+
+		scope.next(1024);
+		t.record(&scope, &dev, 0..scope.n_frames());
+
+		t.length = Some(20000);
+		t.unmuted = true;
+		t.rewind();
+
+		scope.run_for(44100-1024, 1024, |scope| {
+			println!("{}", scope.time);
+			t.record(scope, &dev, 0..scope.n_frames());
+			t.playback(scope, &mut dev, 0..scope.n_frames());
+		});
+
+		assert!(dev.capture_buffers[0].len() == dev.capture_buffers[1].len());
+		for i in 0..=1 {
+			assert!(dev.playback_buffers[i][1024..1024+20000] == dev.capture_buffers[i][0..20000]);
+			assert!(dev.playback_buffers[i][1024+20000..1024+20000+20000] == dev.capture_buffers[i][0..20000]);
+		}
+	}
+}
