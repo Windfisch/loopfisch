@@ -13,7 +13,7 @@ jobs:
       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
       RUSTFLAGS: "-Zinstrument-coverage"
     steps:
-      - run: echo ref ${GITHUB_REF}, sha: ${GITHUB_SHA}, repo: ${GITHUB_REPOSITORY}, head ref: ${GITHUB_HEAD_REF}
+      - run: "echo ref ${GITHUB_REF}, sha ${GITHUB_SHA}, repo ${GITHUB_REPOSITORY}, head ref ${GITHUB_HEAD_REF}"
       - name: Install dependencies
         run: sudo apt-get install libjack-dev
       - uses: actions/checkout@v2
@@ -35,7 +35,7 @@ jobs:
       - run: ls -l
       - run: grcov . --binary-path ./target/debug -s . -t lcov --branch --ignore-not-existing -o lcov.info
       - run: ls -l lcov.info
-      - run: echo ref ${GITHUB_REF}, sha: ${GITHUB_SHA}, repo: ${GITHUB_REPOSITORY}, head ref: ${GITHUB_HEAD_REF}
+      - run: "echo ref ${GITHUB_REF}, sha: ${GITHUB_SHA}, repo: ${GITHUB_REPOSITORY}, head ref: ${GITHUB_HEAD_REF}"
       - run: bash <(curl -s https://codecov.io/bash) -f lcov.info
       - uses: actions/upload-artifact@v2
         with:
