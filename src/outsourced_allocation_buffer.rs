@@ -43,7 +43,6 @@ pub struct Buffer<T> {
 // instruct the helper thread to exit when this buffer goes out of scope
 impl<T> Drop for Buffer<T> {
 	fn drop(&mut self) {
-		println!("dropping");
 		// there is always enough space for the End request.
 		self.new_fragment_request_ringbuf.push(ThreadRequest::End).map_err(|_|()).unwrap();
 		self.thread_handle.thread().unpark();
@@ -96,7 +95,6 @@ impl<T: 'static + Send> Buffer<T> {
 							incoming_producer.push(fragment).map_err(|_|()).unwrap();
 						}
 						ThreadRequest::End => {
-							println!("helper thread exiting");
 							return;
 						}
 					}
@@ -134,8 +132,8 @@ impl<T: 'static + Send> Buffer<T> {
 		}
 	}
 
-	/// Execute func() on the current item (if there is one) and return the result.
-	/// If there is none, return None. Then advances the cursor to the next item
+	/// Returns a reference to the current item, if one exists, and advances the cursor to the next item.
+	/// Returns None if none exists.
 	pub fn next<'a>(&mut self) -> Option<&'a T> {
 		if self.iter_cursor.is_null() {
 			return None;
@@ -207,7 +205,6 @@ impl<T: 'static + Send> Buffer<T> {
 			// a new fragment has been queued already
 			match self.incoming_fragment_ringbuf.pop() {
 				Some(fragment) => {
-					//println!("got new fragment");
 					self.fragments.push_back(fragment);
 					self.request_pending = false;
 				}
@@ -221,14 +218,170 @@ impl<T: 'static + Send> Buffer<T> {
 			(*self.fragments.back_mut().get().unwrap().buf.get()).push(elem);
 		}
 
-		if remaining < self.remaining_threshold && !self.request_pending {
+		if remaining <= self.remaining_threshold && !self.request_pending {
 			self.new_fragment_request_ringbuf.push(ThreadRequest::Fragment).map_err(|_|()).unwrap();
 			self.request_pending = true;
 			self.thread_handle.thread().unpark();
-			//println!("requesting new fragment");
 		}
 
 		Ok(())
 	}
 }
 
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use assert_no_alloc::assert_no_alloc;
+
+	macro_rules! rt_assert {
+		($e:expr) => { assert!( assert_no_alloc(|| $e) ); }
+	}
+
+	fn wait() {
+		std::thread::sleep(std::time::Duration::from_millis(10));
+	}
+
+	#[test]
+	pub fn only_empty_buffers_report_empty() {
+		let mut buffer = Buffer::<u32>::new(8, 4);
+		rt_assert!(buffer.empty());
+		buffer.push(42).expect("push failed");
+		rt_assert!(!buffer.empty());
+		for _ in 1..7 {
+			buffer.push(42).expect("push failed");
+		}
+		wait();
+		for _ in 7..12 {
+			buffer.push(42).expect("push failed");
+		}
+		assert!( assert_no_alloc(|| !buffer.empty() ));
+		buffer.rewind();
+		assert!( assert_no_alloc(|| !buffer.empty() ));
+	}
+
+	#[test]
+	pub fn next_empty_buffer_returns_none() {
+		let mut buffer = Buffer::<u32>::new(8, 4);
+		rt_assert!( buffer.next().is_none() );
+		rt_assert!( buffer.next().is_none() );
+		rt_assert!( buffer.next().is_none() );
+	}
+
+	#[test]
+	pub fn peek_empty_buffer_returns_none() {
+		let mut buffer = Buffer::<u32>::new(8, 4);
+		rt_assert!( buffer.peek().is_none() );
+		rt_assert!( buffer.peek().is_none() );
+		rt_assert!( buffer.peek().is_none() );
+	}
+
+	#[test]
+	pub fn buffer_must_be_rewound_prior_to_first_read() {
+		let mut buffer = Buffer::<u32>::new(8, 4);
+		for i in 0..6 {
+			rt_assert!( buffer.push(i).is_ok() );
+		}
+
+		assert!( assert_no_alloc(|| buffer.next()).is_none() );
+	}
+
+	#[test]
+	pub fn rewinding_empty_buffer_does_nothing() {
+		let mut buffer = Buffer::<u32>::new(8, 4);
+		assert_no_alloc(|| buffer.rewind() );
+		rt_assert!( buffer.peek().is_none() );
+	}
+
+	#[test]
+	pub fn rewinding_nonempty_buffer_rewinds() {
+		let mut buffer = Buffer::<u32>::new(8, 4);
+		for i in 0..6 {
+			rt_assert!( buffer.push(i).is_ok() );
+		}
+		
+		assert_no_alloc(|| buffer.rewind());
+		assert!( *assert_no_alloc(|| buffer.next()).unwrap() == 0 );
+		assert!( *assert_no_alloc(|| buffer.next()).unwrap() == 1 );
+		assert!( *assert_no_alloc(|| buffer.next()).unwrap() == 2 );
+		assert_no_alloc(|| buffer.rewind());
+		assert!( *assert_no_alloc(|| buffer.next()).unwrap() == 0 );
+		assert!( *assert_no_alloc(|| buffer.next()).unwrap() == 1 );
+		assert!( *assert_no_alloc(|| buffer.next()).unwrap() == 2 );
+
+		wait();
+		for i in 6..12 {
+			rt_assert!( buffer.push(i).is_ok() );
+		}
+		assert_no_alloc(|| buffer.rewind());
+		for i in 0..10 {
+			assert!( *assert_no_alloc(|| buffer.next()).unwrap() == i );
+		}
+		assert_no_alloc(|| buffer.rewind());
+		for i in 0..10 {
+			assert!( *assert_no_alloc(|| buffer.next()).unwrap() == i );
+		}
+	}
+
+	#[test]
+	pub fn next_returns_pushed_items() {
+		let mut buffer = Buffer::<u32>::new(8, 4);
+		rt_assert!( buffer.push(0).is_ok() );
+		assert_no_alloc(|| buffer.rewind());
+
+		for i in 1..1024 {
+			if i % 8 == 6 {
+				wait();
+			}
+			rt_assert!( buffer.push(i).is_ok() );
+			assert!( *assert_no_alloc(|| buffer.next()).unwrap() == i-1 );
+		}
+	}
+
+	#[test]
+	pub fn next_beyond_end_returns_none() {
+		let mut buffer = Buffer::<u32>::new(8, 4);
+		for i in 0..6 {
+			rt_assert!( buffer.push(i).is_ok() );
+		}
+		wait();
+		for i in 6..10 {
+			rt_assert!( buffer.push(i).is_ok() );
+		}
+		
+		assert_no_alloc(|| buffer.rewind());
+		for i in 0..10 {
+			assert!( *assert_no_alloc(|| buffer.next()).unwrap() == i);
+		}
+		assert!(assert_no_alloc(|| buffer.next()).is_none());
+	}
+
+	#[test]
+	pub fn peek_does_not_advance() {
+		let mut buffer = Buffer::<u32>::new(8, 4);
+		for i in 0..3 {
+			rt_assert!( buffer.push(i).is_ok() );
+		}
+		
+		assert_no_alloc(|| buffer.rewind());
+		for i in 0..3 {
+			assert!( *assert_no_alloc(|| buffer.peek()).unwrap() == i);
+			assert!( *assert_no_alloc(|| buffer.peek()).unwrap() == i);
+			assert!( *assert_no_alloc(|| buffer.next()).unwrap() == i);
+		}
+		assert!(assert_no_alloc(|| buffer.peek()).is_none());
+		assert!(assert_no_alloc(|| buffer.peek()).is_none());
+		assert!(assert_no_alloc(|| buffer.next()).is_none());
+	}
+
+	#[test]
+	pub fn push_fails_gracefully_when_too_fast() {
+		let mut buffer = Buffer::<u32>::new(2, 1);
+		for _ in 0..100 {
+			if buffer.push(42).is_err() {
+				return;
+			}
+		}
+
+		panic!("No error occurred when one should have occurred");
+	}
+}
