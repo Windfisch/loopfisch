@@ -15,7 +15,6 @@ jobs:
     steps:
       - name: Install dependencies
         run: sudo apt-get install libjack-dev
-      - run: rustup component add llvm-tools-preview
       - uses: actions/checkout@v2
         with:
           fetch-depth: 3
@@ -24,6 +23,7 @@ jobs:
           profile: minimal
           toolchain: nightly
           override: true
+      - run: rustup component add llvm-tools-preview
       - uses: actions-rs/install@v0.1
         with:
           crate: grcov
