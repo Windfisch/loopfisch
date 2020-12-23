@@ -24,7 +24,7 @@ jobs:
       - uses: actions-rs/install@v0.1
         with:
           crate: grcov
-          version: 0.6.1
+          version: latest
           use-tool-cache: true
       - run: cargo build
       - run: cargo test
