@@ -15,6 +15,7 @@ jobs:
     steps:
       - name: Install dependencies
         run: sudo apt-get install libjack-dev
+      - run: rustup component add llvm-tools-preview
       - uses: actions/checkout@v2
         with:
           fetch-depth: 3
@@ -30,6 +31,7 @@ jobs:
           use-tool-cache: true
       - run: cargo build
       - run: cargo test
+      - run: ls -l
       - run: grcov . --binary-path ./target/debug -s . -t lcov --branch --ignore-not-existing -o lcov.info
       - run: ls -l lcov.info
       - run: bash <(curl -s https://codecov.io/bash) -f lcov.info
