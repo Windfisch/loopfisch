@@ -136,11 +136,10 @@ impl AudioDeviceTrait for DummyAudioDevice {
 	fn playback_latency(&self) -> u32 { self.playback_latency }
 	fn capture_latency(&self) -> u32 { self.capture_latency }
 	fn playback_and_capture_buffers(&mut self, scope: &DummyScope) -> PlaybackCaptureIter {
-		for vec in self.playback_buffers.iter_mut() {
-			vec.resize((scope.time + scope.n_frames) as usize, 0.0);
-		}
-		for vec in self.capture_buffers.iter_mut() {
-			vec.resize((scope.time + scope.n_frames) as usize, 0.0);
+		for vec in self.playback_buffers.iter_mut().chain( self.capture_buffers.iter_mut() ) {
+			if vec.len() < (scope.time + scope.n_frames) as usize {
+				vec.resize((scope.time + scope.n_frames) as usize, 0.0);
+			}
 		}
 		PlaybackCaptureIter(self.playback_buffers.iter_mut().zip(self.capture_buffers.iter()), scope.time as usize)
 	}
