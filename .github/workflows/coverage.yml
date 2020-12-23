@@ -31,5 +31,6 @@ jobs:
       - run: cargo build
       - run: cargo test
       - run: grcov . --binary-path ./target/debug -s . -t lcov --branch --ignore-not-existing -o lcov.info
+      - run: ls -l lcov.info
       - run: bash <(curl -s https://codecov.io/bash) -f lcov.info
 
