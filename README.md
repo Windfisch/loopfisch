@@ -7,6 +7,7 @@ This is still in active development, but the basic functionality already works.
 
 ![build](https://github.com/Windfisch/loopfisch/workflows/build/badge.svg)
 ![test suite](https://github.com/Windfisch/loopfisch/workflows/test%20suite/badge.svg)
+[![codecov](https://codecov.io/gh/Windfisch/loopfisch/branch/master/graph/badge.svg?token=TTT5P17K18)](https://codecov.io/gh/Windfisch/loopfisch)
 
 Features
 --------

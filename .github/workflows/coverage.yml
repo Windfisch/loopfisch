@@ -1,0 +1,33 @@
+name: test coverage
+
+env:
+  CARGO_TERM_COLOR: always
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    name: Test Coverage
+    runs-on: ubuntu-latest
+    env:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+      RUSTFLAGS: "-Zinstrument-coverage"
+    steps:
+      - name: Install dependencies
+        run: sudo apt-get install libjack-dev
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+      - uses: actions-rs/install@v0.1
+        with:
+          crate: grcov
+          version: latest
+          use-tool-cache: true
+      - run: cargo build
+      - run: cargo test
+      - run: grcov . --binary-path ./target/debug -s . -t lcov --branch --ignore-not-existing -o lcov.info
+      - run: bash <(curl -s https://codecov.io/bash) -f lcov.info
+
