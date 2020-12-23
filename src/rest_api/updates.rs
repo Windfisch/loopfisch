@@ -166,6 +166,6 @@ impl UpdateList {
 }
 
 #[get("/updates?<since>&<seconds>")]
-pub async fn updates(state: State<'_, std::sync::Arc<GuiState>>, since: u64, seconds: u64) -> Json<Vec<Update>> {
+pub async fn get_updates(state: State<'_, std::sync::Arc<GuiState>>, since: u64, seconds: u64) -> Json<Vec<Update>> {
 	Json(state.update_list.poll(Duration::from_secs(seconds), since).await)
 }
