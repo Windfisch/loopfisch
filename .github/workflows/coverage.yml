@@ -9,29 +9,28 @@ jobs:
   test:
     name: Test Coverage
     runs-on: ubuntu-latest
-    env:
-      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-      RUSTFLAGS: "-Zinstrument-coverage"
     steps:
-      - run: "echo ref ${GITHUB_REF}, sha ${GITHUB_SHA}, repo ${GITHUB_REPOSITORY}, head ref ${GITHUB_HEAD_REF}"
-      - name: Install dependencies
-        run: sudo apt-get install libjack-dev
+      - run: sudo apt-get install libjack-dev
       - uses: actions/checkout@v2
         with:
           fetch-depth: 0
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly
+          components: llvm-tools-preview
+          toolchain: nightly-2020-11-24
           override: true
-      - run: rustup component add llvm-tools-preview
       - uses: actions-rs/install@v0.1
         with:
           crate: grcov
-          version: latest
+          version: 0.6.1
           use-tool-cache: true
       - run: cargo build
+        env:
+          RUSTFLAGS: "-Zinstrument-coverage"
       - run: cargo test
+        env:
+          RUSTFLAGS: "-Zinstrument-coverage"
       - run: ls -l
       - run: grcov . --binary-path ./target/debug -s . -t lcov --branch --ignore-not-existing -o lcov.info
       - run: ls -l lcov.info
