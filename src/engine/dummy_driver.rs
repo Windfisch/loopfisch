@@ -61,7 +61,7 @@ impl TimestampedMidiEvent for DummyMidiEvent {
 	fn bytes(&self) -> &[u8] { &self.data }
 }
 
-impl MidiDeviceTrait for &mut DummyMidiDevice {
+impl MidiDeviceTrait for DummyMidiDevice {
 	type Event<'a> = DummyMidiEvent;
 	type EventIterator<'a> = Cloned<Iter<'a, DummyMidiEvent>>;
 	type Scope = DummyScope;
@@ -89,6 +89,21 @@ impl MidiDeviceTrait for &mut DummyMidiDevice {
 		self.latency
 	}
 	fn capture_latency(&self) -> u32 { unimplemented!(); }
+}
+
+impl MidiDeviceTrait for &mut DummyMidiDevice {
+	type Event<'a> = DummyMidiEvent;
+	type EventIterator<'a> = Cloned<Iter<'a, DummyMidiEvent>>;
+	type Scope = DummyScope;
+
+	fn incoming_events(&'a self, scope: &'a Self::Scope) -> Self::EventIterator<'a> { (**self).incoming_events(scope) }
+	fn commit_out_buffer(&mut self, scope: &Self::Scope) { (**self).commit_out_buffer(scope) }
+	fn queue_event(&mut self, msg: MidiMessage) -> Result<(), ()> { (**self).queue_event(msg) }
+	fn update_registry(&mut self, scope: &Self::Scope) { (**self).update_registry(scope) }
+	fn clone_registry(&self) -> super::midi_registry::MidiNoteRegistry { (**self).clone_registry() }
+	fn info(&self) -> MidiDeviceInfo { (**self).info() }
+	fn playback_latency(&self) -> u32 { (**self).playback_latency() }
+	fn capture_latency(&self) -> u32 { (**self).capture_latency() }
 }
 
 

@@ -49,3 +49,6 @@ Test suite
 ----------
 
 Run the tests with `cargo test`.
+
+Note that the *outsourced_allocation_buffer* tests are inherently racy and it might be needed to increase
+sleep time in `fn wait()`.

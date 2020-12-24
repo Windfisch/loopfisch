@@ -369,32 +369,7 @@ intrusive_adapter!(pub MidiTakeAdapter = Box<MidiTakeNode>: MidiTakeNode { link:
 mod tests {
 	use super::super::dummy_driver::*;
 	use super::*;
-
-	struct XorShift {
-		state: u64
-	}
-
-	impl Iterator for XorShift {
-		type Item = f32;
-		fn next(&mut self) -> Option<f32> {
-			self.state ^= self.state << 13;
-			self.state ^= self.state >> 17;
-			self.state ^= self.state << 5;
-			Some(self.state as f32 / 0x8000_0000_0000_0000u64 as f32 - 1.0)
-		}
-	}
-
-	fn rand_iter(seed: u32) -> XorShift {
-		let mut iter = XorShift { state: seed as u64 | (((seed ^ 0xDEADBEEF) as u64) << 32) };
-		for _ in 0..16 {
-			iter.next();
-		}
-		return iter;
-	}
-
-	fn rand_vec(seed: u32, length: usize) -> Vec<f32> {
-		rand_iter(seed).take(length).collect()
-	}
+	use super::super::testutils::rand_vec_f32;
 
 	fn prepare() -> (AudioTake, DummyScope, DummyAudioDevice) {
 		const HUGE_CHUNKSIZE: usize = 100000;
@@ -402,8 +377,8 @@ mod tests {
 		let scope = DummyScope::new();
 		let mut dev = DummyAudioDevice::new(2, 0, 0);
 
-		dev.capture_buffers[0] = rand_vec(1337, 44100);
-		dev.capture_buffers[1] = rand_vec(42, 44100);
+		dev.capture_buffers[0] = rand_vec_f32(1337, 44100);
+		dev.capture_buffers[1] = rand_vec_f32(42, 44100);
 
 		return (t, scope, dev);
 	}
