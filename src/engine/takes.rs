@@ -850,10 +850,66 @@ mod tests {
 	}
 
 	#[test]
-	pub fn miditake_reactivates_notes_upon_unmute() {
+	pub fn miditake_stops_notes_upon_mute() {
+		let (mut t, mut scope, mut dev) = prepare2();
+
+		t.unmuted = true;
+		t.unmuted_old = true;
+		t.length = Some(4096);
+		t.rewind();
+
+		scope.run_for(1040, 16, |scope| {
+			t.playback(&mut dev, 0..scope.n_frames());
+			dev.commit_out_buffer(scope);
+		});
+
+		dev.committed.clear();
+
+		t.unmuted = false;
+		
+		scope.run_for(32, 16, |scope| {
+			t.playback(&mut dev, 0..scope.n_frames());
+			dev.commit_out_buffer(scope);
+		});
+
+		assert!(extract_and_convert(&dev, 2048..4096) == vec![
+			DummyMidiEvent { time: 1040, data: vec![0x80, 52, 64] },
+			DummyMidiEvent { time: 1040, data: vec![0x80, 53, 64] },
+			DummyMidiEvent { time: 1040, data: vec![0x80, 60, 64] },
+		]);
+
+		assert!(t.unmuted_old == false);
 	}
 
 	#[test]
-	pub fn miditake_stops_notes_upon_mute() {
+	pub fn miditake_reactivates_notes_upon_unmute() {
+		let (mut t, mut scope, mut dev) = prepare2();
+
+		t.unmuted = false;
+		t.unmuted_old = false;
+		t.length = Some(4096);
+		t.rewind();
+
+		scope.run_for(1040, 16, |scope| {
+			t.playback(&mut dev, 0..scope.n_frames());
+			dev.commit_out_buffer(scope);
+		});
+
+		assert!(dev.committed.len() == 0);
+
+		t.unmuted = true;
+		
+		scope.run_for(32, 16, |scope| {
+			t.playback(&mut dev, 0..scope.n_frames());
+			dev.commit_out_buffer(scope);
+		});
+
+		assert!(extract_and_convert(&dev, 2048..4096) == vec![
+			DummyMidiEvent { time: 1040, data: vec![0x90, 52, 64] },
+			DummyMidiEvent { time: 1040, data: vec![0x90, 53, 64] },
+			DummyMidiEvent { time: 1040, data: vec![0x90, 60, 64] },
+		]);
+
+		assert!(t.unmuted_old == true);
 	}
 }
