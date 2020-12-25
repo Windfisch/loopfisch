@@ -6,11 +6,13 @@ mod data;
 mod shared;
 mod backend;
 mod jack_driver;
-mod dummy_driver;
 mod metronome;
 mod midi_registry;
 mod midiclock;
 mod driver_traits;
+#[cfg(test)]
+mod dummy_driver;
+#[cfg(test)]
 mod testutils;
 
 use backend::*;

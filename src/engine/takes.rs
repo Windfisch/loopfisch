@@ -196,7 +196,7 @@ impl MidiTake {
 
 			let mut rewind_offset = 0;
 			loop {
-				let mut note_registry = self.note_registry.borrow_mut(); // TODO this SUCKS! oh god why, rust. this whole callback thing is garbage.
+				let mut note_registry = self.note_registry.borrow_mut();
 
 				if let Some(event) = self.events.peek().filter(|event| event.timestamp < length) {
 					assert!(event.timestamp + rewind_offset >= self.playback_position);
@@ -222,19 +222,21 @@ impl MidiTake {
 				}
 				else {
 					// no (relevant) events left.
-					if rewind_offset + length < self.playback_position + range.len() as u32 {
+					let last_timestamp_before_loop = rewind_offset + length - 1;
+					assert!(last_timestamp_before_loop >= self.playback_position);
+
+					if last_timestamp_before_loop < self.playback_position + range.len() as u32 {
 						// rewind only when the song actually passes the take length
 						println!("MIDI REWIND");
 						self.events.rewind();
-						rewind_offset += length;
-					
-						assert!(rewind_offset >= self.playback_position);
-						let relative_timestamp = rewind_offset - self.playback_position + range.start;
+
+						let relative_timestamp = last_timestamp_before_loop - self.playback_position + range.start;
 						debug_assert!(range.contains(&relative_timestamp));
 						if self.unmuted {
 							note_registry.send_noteoffs_at(device, relative_timestamp);
 						}
 						note_registry.clear();
+						rewind_offset += length;
 					}
 					else {
 						// do not rewind yet when take length hasn't been exceeded yet (but the last note has)
@@ -309,7 +311,7 @@ impl MidiTake {
 				else {
 					let data: [u8;3] = event.bytes().try_into().unwrap();
 					let timestamp = event.time() - range.start + self.recorded_length;
-					
+				
 					let result = self.events.push( MidiMessage {
 						timestamp,
 						data,
@@ -578,7 +580,6 @@ mod tests {
 		t.rewind();
 
 		scope.run_for(44100-1024, 1024, |scope| {
-			println!("{}", scope.time);
 			t.record(scope, &dev, 0..scope.n_frames());
 			t.playback(scope, &mut dev, 0..scope.n_frames());
 		});
@@ -588,5 +589,327 @@ mod tests {
 			assert!(dev.playback_buffers[i][1024..1024+20000] == dev.capture_buffers[i][0..20000]);
 			assert!(dev.playback_buffers[i][1024+20000..1024+20000+20000] == dev.capture_buffers[i][0..20000]);
 		}
+	}
+
+	fn prepare2() -> (MidiTake, DummyScope, DummyMidiDevice) {
+		let mut t = MidiTake::new(0, 0, false);
+		let mut scope = DummyScope::new();
+		let mut dev = DummyMidiDevice::new(0);
+
+		dev.incoming_events = vec![
+			DummyMidiEvent { time:     0, data: vec![0x90, 50, 64] },
+			DummyMidiEvent { time:     1, data: vec![0x90, 51, 64] },
+			DummyMidiEvent { time:   230, data: vec![0x90, 60, 64] },
+			DummyMidiEvent { time:  1023, data: vec![0x80, 50, 64] },
+			DummyMidiEvent { time:  1023, data: vec![0x80, 51, 64] },
+			DummyMidiEvent { time:  1024, data: vec![0x90, 52, 64] },
+			DummyMidiEvent { time:  1024, data: vec![0x90, 53, 64] },
+			DummyMidiEvent { time:  1100, data: vec![0x80, 53, 64] },
+			DummyMidiEvent { time:  1100, data: vec![0x80, 52, 64] },
+			DummyMidiEvent { time:  1200, data: vec![0x80, 60, 64] },
+		];
+
+		scope.next(1024);
+		t.start_recording(&scope, &mut dev, 0..0);
+		t.record(&scope, &mut dev, 0..scope.n_frames());
+		
+		scope.next(1024);
+		t.record(&scope, &mut dev, 0..scope.n_frames());
+
+		return (t, scope, dev);
+	}
+
+	fn extract_and_convert(dev: &DummyMidiDevice, range: std::ops::Range<u32>) -> Vec<DummyMidiEvent> {
+		dev.committed
+			.iter()
+			.filter(|msg| range.contains(&msg.timestamp))
+			.map(|msg| DummyMidiEvent {
+				time: msg.timestamp - range.start,
+				data: msg.data[0..msg.datalen as usize].into()
+			}
+		).collect()
+	}
+
+	#[test]
+	pub fn miditake_with_unknown_length_plays_nothing() {
+		let (mut t, mut scope, mut dev) = prepare2();
+
+		t.unmuted = true;
+		t.unmuted_old = true;
+		t.length = None;
+
+		scope.run_for(2048, 1024, |scope| {
+			t.playback(&mut dev, 0..scope.n_frames());
+			dev.commit_out_buffer(scope);
+		});
+
+		assert!(dev.committed.len() == 0);
+	}
+
+	#[test]
+	pub fn muted_miditake_with_known_length_plays_nothing() {
+		let (mut t, mut scope, mut dev) = prepare2();
+
+		t.unmuted = false;
+		t.unmuted_old = false;
+		t.length = Some(4096);
+		t.rewind();
+
+		scope.run_for(2048, 1024, |scope| {
+			t.playback(&mut dev, 0..scope.n_frames());
+			dev.commit_out_buffer(scope);
+		});
+		
+		assert!(dev.committed.len() == 0);
+	}
+
+	#[test]
+	pub fn unmuted_miditake_with_known_length_plays_recorded_events_and_loops() {
+		let execute_with_buffersize = |buffersize| {
+			let (mut t, mut scope, mut dev) = prepare2();
+
+			t.unmuted = true;
+			t.unmuted_old = true;
+			t.length = Some(2048);
+			t.rewind();
+
+			scope.run_for(2048*3, buffersize, |scope| {
+				t.playback(&mut dev, 0..scope.n_frames());
+				dev.commit_out_buffer(scope);
+			});
+		
+			assert!(extract_and_convert(&dev, 2048..4096) == dev.incoming_events);
+			assert!(extract_and_convert(&dev, 4096..6144) == dev.incoming_events);
+			assert!(extract_and_convert(&dev, 6144..8192) == dev.incoming_events);
+		};
+
+		// loop length is divisible by the buffer size
+		execute_with_buffersize(1024);
+		execute_with_buffersize(32);
+		execute_with_buffersize(1);
+
+		// loop length is not divisible by the buffer size
+		execute_with_buffersize(997);
+
+		// loop length is shorter than the buffer size
+		execute_with_buffersize(3000);
+
+		// 3 * loop length is shorter than the buffer size
+		execute_with_buffersize(2048 * 4);
+	}
+
+	#[test]
+	pub fn miditake_sends_noteoff_for_dangling_notes_at_the_end() {
+		let execute_with_buffersize = |buffersize| {
+			let (mut t, mut scope, mut dev) = prepare2();
+
+			t.unmuted = true;
+			t.unmuted_old = true;
+			t.length = Some(1024);
+			t.rewind();
+
+			scope.run_for(1024*3, buffersize, |scope| {
+				t.playback(&mut dev, 0..scope.n_frames());
+				dev.commit_out_buffer(scope);
+			});
+			
+			let expected_events : Vec<_> =
+				dev.incoming_events.iter().filter(|ev| ev.time < 1024)
+				.chain([ DummyMidiEvent { time:  1023, data: vec![0x80, 60, 64] } ].iter())
+				.cloned().collect();
+
+			assert!(extract_and_convert(&dev, 2048..3072) == expected_events);
+			assert!(extract_and_convert(&dev, 3072..4096) == expected_events);
+			assert!(extract_and_convert(&dev, 4096..5120) == expected_events);
+		};
+
+		// loop length is divisible by the buffer size
+		execute_with_buffersize(1024);
+		execute_with_buffersize(32);
+		execute_with_buffersize(1);
+
+		// loop length is not divisible by the buffer size
+		execute_with_buffersize(997);
+
+		// loop length is shorter than the buffer size
+		execute_with_buffersize(3000);
+
+		// 3 * loop length is shorter than the buffer size
+		execute_with_buffersize(2048 * 4);
+	}
+
+	#[test]
+	pub fn miditake_sends_noteon_for_already_held_notes_at_the_start() {
+		let mut t = MidiTake::new(0, 0, false);
+		let mut scope = DummyScope::new();
+		let mut dev = DummyMidiDevice::new(0);
+
+		dev.registry.register_event([0x90, 31, 64]);
+		dev.incoming_events = vec![
+			DummyMidiEvent { time:  500, data: vec![0x90, 30, 64] },
+			DummyMidiEvent { time: 1000, data: vec![0x90, 50, 64] },
+			DummyMidiEvent { time: 1001, data: vec![0x90, 51, 64] },
+			DummyMidiEvent { time: 1200, data: vec![0x80, 30, 64] },
+			DummyMidiEvent { time: 1200, data: vec![0x80, 31, 64] },
+			DummyMidiEvent { time: 1800, data: vec![0x80, 50, 64] },
+			DummyMidiEvent { time: 2023, data: vec![0x80, 51, 64] },
+		];
+
+		scope.next(2024);
+		t.start_recording(&scope, &mut dev, 0..1000);
+		t.record(&scope, &mut dev, 1000..scope.n_frames());
+		
+		t.unmuted = true;
+		t.unmuted_old = true;
+		t.length = Some(1024);
+		t.rewind();
+
+		scope.next(2024);
+		t.playback(&mut dev, 0..scope.n_frames());
+		dev.commit_out_buffer(&scope);
+		
+		let expected_events = vec![
+			DummyMidiEvent { time:    0, data: vec![0x90, 30, 64] },
+			DummyMidiEvent { time:    0, data: vec![0x90, 31, 64] },
+			DummyMidiEvent { time:    0, data: vec![0x90, 50, 64] },
+			DummyMidiEvent { time:    1, data: vec![0x90, 51, 64] },
+			DummyMidiEvent { time:  200, data: vec![0x80, 30, 64] },
+			DummyMidiEvent { time:  200, data: vec![0x80, 31, 64] },
+			DummyMidiEvent { time:  800, data: vec![0x80, 50, 64] },
+			DummyMidiEvent { time: 1023, data: vec![0x80, 51, 64] },
+		];
+
+		assert!(extract_and_convert(&dev, 2024..(2024+1024)) == expected_events);
+	}
+
+	#[test]
+	pub fn miditake_seek_works() {
+		let (mut t, mut scope, mut dev) = prepare2();
+
+		t.unmuted = true;
+		t.unmuted_old = true;
+		t.length = Some(1024);
+		t.rewind();
+
+		t.seek(128);
+
+		scope.run_for(256, 16, |scope| {
+			t.playback(&mut dev, 0..scope.n_frames());
+			dev.commit_out_buffer(scope);
+		});
+
+		t.seek(200);
+		scope.run_for(64, 16, |scope| {
+			t.playback(&mut dev, 0..scope.n_frames());
+			dev.commit_out_buffer(scope);
+		});
+
+		let expected_events = vec![
+			DummyMidiEvent { time: 102, data: vec![0x90, 60, 64] },
+			DummyMidiEvent { time: 286, data: vec![0x90, 60, 64] },
+		];
+		
+		assert!(extract_and_convert(&dev, 2048..3072) == expected_events);
+	}
+
+	#[test]
+	pub fn miditake_playback_and_capture_can_be_interleaved_as_long_the_end_is_never_hit() {
+		let mut t = MidiTake::new(0, 0, false);
+		let mut scope = DummyScope::new();
+		let mut dev = DummyMidiDevice::new(0);
+
+		dev.incoming_events = vec![
+			DummyMidiEvent { time:     0, data: vec![0x90, 50, 64] },
+			DummyMidiEvent { time:     1, data: vec![0x90, 51, 64] },
+			DummyMidiEvent { time:   230, data: vec![0x90, 60, 64] },
+			DummyMidiEvent { time:   570, data: vec![0x80, 50, 64] },
+			DummyMidiEvent { time:   800, data: vec![0x80, 51, 64] },
+			DummyMidiEvent { time:  1024, data: vec![0x90, 52, 64] },
+			DummyMidiEvent { time:  1024, data: vec![0x90, 53, 64] },
+			DummyMidiEvent { time:  1100, data: vec![0x80, 53, 64] },
+			DummyMidiEvent { time:  1100, data: vec![0x80, 52, 64] },
+			DummyMidiEvent { time:  1200, data: vec![0x80, 60, 64] },
+		];
+
+		scope.next(512);
+		t.start_recording(&scope, &mut dev, 0..0);
+		t.record(&scope, &mut dev, 0..scope.n_frames());
+		
+		t.unmuted = true;
+		t.unmuted_old = true;
+		t.length = Some(4096);
+		t.rewind();
+		
+		scope.run_for(2048, 16, |scope| {
+			t.record(scope, &mut dev, 0..scope.n_frames());
+			t.playback(&mut dev, 0..scope.n_frames());
+			dev.commit_out_buffer(scope);
+		});
+
+		assert!(extract_and_convert(&dev, 512..(2048+512)) == dev.incoming_events);
+	}
+
+	#[test]
+	pub fn miditake_stops_notes_upon_mute() {
+		let (mut t, mut scope, mut dev) = prepare2();
+
+		t.unmuted = true;
+		t.unmuted_old = true;
+		t.length = Some(4096);
+		t.rewind();
+
+		scope.run_for(1040, 16, |scope| {
+			t.playback(&mut dev, 0..scope.n_frames());
+			dev.commit_out_buffer(scope);
+		});
+
+		dev.committed.clear();
+
+		t.unmuted = false;
+		
+		scope.run_for(32, 16, |scope| {
+			t.playback(&mut dev, 0..scope.n_frames());
+			dev.commit_out_buffer(scope);
+		});
+
+		assert!(extract_and_convert(&dev, 2048..4096) == vec![
+			DummyMidiEvent { time: 1040, data: vec![0x80, 52, 64] },
+			DummyMidiEvent { time: 1040, data: vec![0x80, 53, 64] },
+			DummyMidiEvent { time: 1040, data: vec![0x80, 60, 64] },
+		]);
+
+		assert!(t.unmuted_old == false);
+	}
+
+	#[test]
+	pub fn miditake_reactivates_notes_upon_unmute() {
+		let (mut t, mut scope, mut dev) = prepare2();
+
+		t.unmuted = false;
+		t.unmuted_old = false;
+		t.length = Some(4096);
+		t.rewind();
+
+		scope.run_for(1040, 16, |scope| {
+			t.playback(&mut dev, 0..scope.n_frames());
+			dev.commit_out_buffer(scope);
+		});
+
+		assert!(dev.committed.len() == 0);
+
+		t.unmuted = true;
+		
+		scope.run_for(32, 16, |scope| {
+			t.playback(&mut dev, 0..scope.n_frames());
+			dev.commit_out_buffer(scope);
+		});
+
+		assert!(extract_and_convert(&dev, 2048..4096) == vec![
+			DummyMidiEvent { time: 1040, data: vec![0x90, 52, 64] },
+			DummyMidiEvent { time: 1040, data: vec![0x90, 53, 64] },
+			DummyMidiEvent { time: 1040, data: vec![0x90, 60, 64] },
+		]);
+
+		assert!(t.unmuted_old == true);
 	}
 }

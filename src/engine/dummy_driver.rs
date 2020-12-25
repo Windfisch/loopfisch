@@ -1,5 +1,6 @@
 use crate::midi_message::MidiMessage;
 use super::driver_traits::*;
+use super::midi_registry::MidiNoteRegistry;
 
 use std::slice::*;
 use std::iter::*;
@@ -7,6 +8,8 @@ use std::iter::*;
 pub struct DummyMidiDevice {
 	queue: Vec<MidiMessage>,
 	pub committed: Vec<MidiMessage>,
+	pub registry: MidiNoteRegistry,
+	pub incoming_events: Vec<DummyMidiEvent>,
 	latency: u32
 }
 impl DummyMidiDevice {
@@ -14,7 +17,9 @@ impl DummyMidiDevice {
 		DummyMidiDevice {
 			queue: vec![],
 			committed: vec![],
-			latency
+			latency,
+			registry: MidiNoteRegistry::new(),
+			incoming_events: Vec::new()
 		}
 	}
 }
@@ -51,10 +56,10 @@ impl DummyScope {
 	}
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct DummyMidiEvent {
-	data: Vec<u8>,
-	time: u32
+	pub data: Vec<u8>,
+	pub time: u32
 }
 impl TimestampedMidiEvent for DummyMidiEvent {
 	fn time(&self) -> u32 { self.time }
@@ -63,10 +68,19 @@ impl TimestampedMidiEvent for DummyMidiEvent {
 
 impl MidiDeviceTrait for DummyMidiDevice {
 	type Event<'a> = DummyMidiEvent;
-	type EventIterator<'a> = Cloned<Iter<'a, DummyMidiEvent>>;
+	type EventIterator<'a> = Box<dyn Iterator<Item=DummyMidiEvent> + 'a>;
 	type Scope = DummyScope;
 
-	fn incoming_events(&'a self, scope: &'a Self::Scope) -> Self::EventIterator<'a> { unimplemented!(); }
+	fn incoming_events(&'a self, scope: &'a Self::Scope) -> Self::EventIterator<'a> {
+		let range = scope.time .. scope.time+scope.n_frames;
+		let time0 = scope.time;
+		Box::new(
+			self.incoming_events
+				.iter()
+				.filter(move |ev| range.contains(&ev.time))
+				.map(move |ev| DummyMidiEvent { time: ev.time - time0, data: ev.data.clone() })
+		)
+	}
 	fn commit_out_buffer(&mut self, scope: &Self::Scope) {
 		for message in self.queue.iter() {
 			assert!(message.timestamp < scope.n_frames);
@@ -83,7 +97,9 @@ impl MidiDeviceTrait for DummyMidiDevice {
 		Ok(())
 	}
 	fn update_registry(&mut self, scope: &Self::Scope) { unimplemented!(); }
-	fn clone_registry(&self) -> super::midi_registry::MidiNoteRegistry { unimplemented!(); }
+	fn clone_registry(&self) -> super::midi_registry::MidiNoteRegistry {
+		self.registry.clone()
+	}
 	fn info(&self) -> MidiDeviceInfo { unimplemented!(); }
 	fn playback_latency(&self) -> u32 {
 		self.latency
@@ -93,7 +109,7 @@ impl MidiDeviceTrait for DummyMidiDevice {
 
 impl MidiDeviceTrait for &mut DummyMidiDevice {
 	type Event<'a> = DummyMidiEvent;
-	type EventIterator<'a> = Cloned<Iter<'a, DummyMidiEvent>>;
+	type EventIterator<'a> = Box<dyn Iterator<Item=DummyMidiEvent> + 'a>;
 	type Scope = DummyScope;
 
 	fn incoming_events(&'a self, scope: &'a Self::Scope) -> Self::EventIterator<'a> { (**self).incoming_events(scope) }

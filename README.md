@@ -16,7 +16,8 @@ Features
 - Audio and MIDI support
 - Simultaneous recording of both Audio and MIDI at a time
 - As seamless as possible switching between both
-- Multiple output chains (implemented by having multiple JACK ports)
+- Multiple audio chains (implemented by having multiple JACK ports)
+- separate "Main speakers" and "Monitoring headphones" output chains (_not yet_)
 - Browser-based user interface
 - Fully (PC-)keyboard-controllable (_not yet_)
 - MIDI clock master
