@@ -222,19 +222,22 @@ impl MidiTake {
 				}
 				else {
 					// no (relevant) events left.
-					if rewind_offset + length < self.playback_position + range.len() as u32 {
+
+					let last_timestamp_before_loop = rewind_offset + length - 1;
+					assert!(last_timestamp_before_loop >= self.playback_position);
+
+					if last_timestamp_before_loop < self.playback_position + range.len() as u32 {
 						// rewind only when the song actually passes the take length
 						println!("MIDI REWIND");
 						self.events.rewind();
-						rewind_offset += length;
-					
-						assert!(rewind_offset >= self.playback_position);
-						let relative_timestamp = rewind_offset - self.playback_position + range.start;
+
+						let relative_timestamp = last_timestamp_before_loop - self.playback_position + range.start;
 						debug_assert!(range.contains(&relative_timestamp));
 						if self.unmuted {
 							note_registry.send_noteoffs_at(device, relative_timestamp);
 						}
 						note_registry.clear();
+						rewind_offset += length;
 					}
 					else {
 						// do not rewind yet when take length hasn't been exceeded yet (but the last note has)
