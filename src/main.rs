@@ -43,7 +43,7 @@ static A: assert_no_alloc::AllocDisabler = assert_no_alloc::AllocDisabler;
 async fn main() {
     println!("Hello, world!");
 
-	let (engine, event_queue) = engine::launch(6000);
+	let (engine, event_queue) = engine::launch(engine::JackDriver::new(), 6000);
 	rest_api::launch_server(engine, event_queue).await;
 	return;
 }

@@ -1,11 +1,95 @@
 use jack;
 use super::driver_traits::*;
 
+use super::backend::AudioThreadState;
+
 use crate::midi_message::MidiMessage;
 
+struct ProcessHandler(AudioThreadState<JackDriver>);
+
+impl jack::ProcessHandler for ProcessHandler {
+	fn process(&mut self, _client: &jack::Client, process_scope: &jack::ProcessScope) -> jack::Control {
+		self.0.process_callback(process_scope);
+		return jack::Control::Continue;
+	}
+}
+
+enum JackClientState {
+	Activated(jack::AsyncClient<Notifications, ProcessHandler>),
+	NotActivated(jack::Client),
+	OhGodWhyRust
+}
+
+impl JackClientState {
+	fn as_jack_client(&self) -> &jack::Client {
+		match self {
+			Self::Activated(async_client) => async_client.as_client(),
+			Self::NotActivated(client) => client,
+			Self::OhGodWhyRust => panic!("cannot happen")
+		}
+	}
+}
+
+pub struct JackDriver {
+	client: JackClientState
+}
+
+impl JackDriver {
+	pub fn new() -> JackDriver {
+		let (client, _status) = jack::Client::new("loopfisch", jack::ClientOptions::NO_START_SERVER).unwrap();
+		println!("JACK running with sampling rate {} Hz, buffer size = {} samples", client.sample_rate(), client.buffer_size());
+		JackDriver {
+			client: JackClientState::NotActivated(client)
+		}
+	}
+}
+
+impl DriverTrait for JackDriver {
+	type MidiDev = MidiDevice;
+	type AudioDev = AudioDevice;
+	type ProcessScope = jack::ProcessScope;
+	type Error = jack::Error;
+
+	fn activate(&mut self, audio_thread_state: AudioThreadState<JackDriver>) {
+		self.client = JackClientState::Activated (
+			match std::mem::replace(&mut self.client, JackClientState::OhGodWhyRust) {
+				JackClientState::Activated(_) => panic!("Client is already activated"),
+				JackClientState::NotActivated(client) =>
+					client.activate_async(Notifications, ProcessHandler(audio_thread_state)).unwrap(),
+				JackClientState::OhGodWhyRust => panic!("Cannot happen")
+			}
+		);
+	}
+
+	fn new_audio_device(&mut self, n_channels: u32, name: &str) -> Result<AudioDevice, jack::Error> {
+		let client = self.client.as_jack_client();
+		Ok(AudioDevice {
+			channels: (0..n_channels).map(|channel| AudioChannel::new(client, name, channel+1)).collect::<Result<_,_>>()?,
+			name: name.into()
+		})
+	}
+
+	fn new_midi_device(&mut self, name: &str) -> Result<MidiDevice, jack::Error> {
+		let client = self.client.as_jack_client();
+		let in_port = client.register_port(&format!("{}_in", name), jack::MidiIn::default())?;
+		let out_port = client.register_port(&format!("{}_out", name), jack::MidiOut::default())?;
+		Ok(MidiDevice {
+			in_port,
+			out_port,
+			out_buffer: smallvec::SmallVec::new(),
+			registry: super::midi_registry::MidiNoteRegistry::new(),
+			name: name.into()
+		})
+	}
+
+	fn sample_rate(&self) -> u32 {
+		self.client.as_jack_client().sample_rate() as u32
+	}
+}
+
 pub struct MidiDevice {
-	in_port: jack::Port<jack::MidiIn>, // FIXME: these should not be public. there should be
-	out_port: jack::Port<jack::MidiOut>, // an abstraction layer around the jack driver.
+	in_port: jack::Port<jack::MidiIn>,
+	out_port: jack::Port<jack::MidiOut>,
 
 	out_buffer: smallvec::SmallVec<[(MidiMessage, usize); 128]>,
 	registry: super::midi_registry::MidiNoteRegistry, // FIXME this belongs in the engine, not the driver
@@ -97,21 +181,6 @@ impl MidiDeviceTrait for MidiDevice {
 	}
 }
 
-impl MidiDevice {
-	pub fn new(client: &jack::Client, name: &str) -> Result<MidiDevice, jack::Error> {
-		let in_port = client.register_port(&format!("{}_in", name), jack::MidiIn::default())?;
-		let out_port = client.register_port(&format!("{}_out", name), jack::MidiOut::default())?;
-		let dev = MidiDevice {
-			in_port,
-			out_port,
-			out_buffer: smallvec::SmallVec::new(),
-			registry: super::midi_registry::MidiNoteRegistry::new(),
-			name: name.into()
-		};
-		Ok(dev)
-	}
-}
-
 #[derive(Debug)]
 struct AudioChannel {
 	pub in_port: jack::Port<jack::AudioIn>, // FIXME: these shouldn't be pub; there should be
@@ -174,16 +243,6 @@ impl AudioDeviceTrait for AudioDevice {
 
 	fn record_buffers(&'a self, scope: &'a jack::ProcessScope) -> Self::SliceIter<'a> {
 		CaptureIter(scope, self.channels.iter())
-	}
-}
-
-impl AudioDevice {
-	pub fn new(client: &jack::Client, n_channels: u32, name: &str) -> Result<AudioDevice, jack::Error> {
-		let dev = AudioDevice {
-			channels: (0..n_channels).map(|channel| AudioChannel::new(client, name, channel+1)).collect::<Result<_,_>>()?,
-			name: name.into()
-		};
-		Ok(dev)
 	}
 }
 

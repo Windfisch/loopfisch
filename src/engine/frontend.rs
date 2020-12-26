@@ -6,7 +6,6 @@ use super::driver_traits::*;
 use std::sync::Arc;
 use std::collections::HashMap;
 use crate::id_generator::IdGenerator;
-use super::jack_driver::{AudioDevice, MidiDevice};
 
 const CHUNKSIZE: usize = 8*1024;
 
@@ -44,37 +43,20 @@ impl GuiMidiDevice {
 	pub fn takes(&self) -> &HashMap<u32, GuiMidiTake> { &self.takes }
 }
 
+pub type FrontendThreadState = GenericFrontendThreadState<super::jack_driver::JackDriver>; // FIXME this does not belong here
 
-pub trait IntoJackClient : Drop + Send {
-	fn as_client<'a>(&'a self) -> &'a jack::Client;
-	fn deactivate(self) -> Result<jack::Client, jack::Error>;
-}
-
-impl<N, P> IntoJackClient for jack::AsyncClient<N, P>
-where
-    N: 'static + Send + Sync + jack::NotificationHandler,
-    P: 'static + Send + jack::ProcessHandler
-{
-	fn as_client<'a>(&'a self) -> &'a jack::Client {
-		self.as_client()
-	}
-	fn deactivate(self) -> Result<jack::Client, jack::Error>{
-		self.deactivate().map(|client_and_callbacks_tuple| client_and_callbacks_tuple.0)
-	}
-}
-
-pub struct FrontendThreadState {
-	pub command_channel: RetryChannelPush<Message<AudioDevice, MidiDevice>>,
+pub struct GenericFrontendThreadState<Driver: DriverTrait> { // FIXME rename this back to FrontendThreadState
+	pub command_channel: RetryChannelPush<Message<Driver::AudioDev, Driver::MidiDev>>,
 	pub devices: HashMap<usize, GuiAudioDevice>,
 	pub mididevices: HashMap<usize, GuiMidiDevice>,
 	pub shared: Arc<SharedThreadState>,
 	pub next_id: IdGenerator,
-	pub async_client: Box<dyn IntoJackClient>
+	pub driver: Driver
 }
 
-impl FrontendThreadState {
+impl<Driver: DriverTrait> GenericFrontendThreadState<Driver> {
 	pub fn sample_rate(&self) -> u32 {
-		self.async_client.as_client().sample_rate() as u32
+		self.driver.sample_rate()
 	}
 
 	pub fn loop_length(&self) -> u32 {
@@ -102,7 +84,7 @@ impl FrontendThreadState {
 
 	pub fn add_device(&mut self, name: &str, channels: u32) -> Result<usize,()> {
 		if let Some(id) = find_first_free_index(&self.devices, 32) {
-			let dev = AudioDevice::new(self.async_client.as_client(), channels, name).map_err(|_|())?;
+			let dev = self.driver.new_audio_device(channels, name).map_err(|_|())?;
 			let guidev = GuiAudioDevice { info: dev.info(), takes: HashMap::new() };
 			self.command_channel.send_message(Message::UpdateAudioDevice(id, Some(dev)))?;
 			self.devices.insert(id, guidev);
@@ -114,7 +96,7 @@ impl FrontendThreadState {
 	}
 	pub fn add_mididevice(&mut self, name: &str) -> Result<usize,()> {
 		if let Some(id) = find_first_free_index(&self.mididevices, 32) {
-			let dev = MidiDevice::new(self.async_client.as_client(), name).map_err(|_|())?;
+			let dev = self.driver.new_midi_device(name).map_err(|_|())?;
 			let guidev = GuiMidiDevice { info: dev.info(), takes: HashMap::new() };
 			self.command_channel.send_message(Message::UpdateMidiDevice(id, Some(dev)))?;
 			self.mididevices.insert(id, guidev);
