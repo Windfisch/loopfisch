@@ -113,7 +113,7 @@ impl MidiDevice {
 }
 
 #[derive(Debug)]
-pub struct AudioChannel {
+struct AudioChannel {
 	pub in_port: jack::Port<jack::AudioIn>, // FIXME: these shouldn't be pub; there should be
 	pub out_port: jack::Port<jack::AudioOut>, // an abstraction layer around the driver
 }
@@ -132,16 +132,16 @@ pub struct AudioDevice {
 	name: String
 }
 
-pub struct MySliceIter<'a>(&'a jack::ProcessScope, std::slice::Iter<'a, AudioChannel>);
-impl<'a> Iterator for MySliceIter<'a> {
+pub struct CaptureIter<'a>(&'a jack::ProcessScope, std::slice::Iter<'a, AudioChannel>);
+impl<'a> Iterator for CaptureIter<'a> {
 	type Item = &'a [f32];
 	fn next(&mut self) -> Option<Self::Item> {
 		self.1.next().map(|channel| channel.in_port.as_slice(self.0))
 	}
 }
 
-pub struct MyOtherSliceIter<'a>(&'a jack::ProcessScope, std::slice::IterMut<'a, AudioChannel>);
-impl<'a> Iterator for MyOtherSliceIter<'a> {
+pub struct PlaybackCaptureIter<'a>(&'a jack::ProcessScope, std::slice::IterMut<'a, AudioChannel>);
+impl<'a> Iterator for PlaybackCaptureIter<'a> {
 	type Item = (&'a mut [f32], &'a [f32]);
 	fn next(&mut self) -> Option<Self::Item> {
 		self.1.next().map(|channel| (channel.out_port.as_mut_slice(self.0), channel.in_port.as_slice(self.0)) )
@@ -149,8 +149,8 @@ impl<'a> Iterator for MyOtherSliceIter<'a> {
 }
 
 impl AudioDeviceTrait for AudioDevice {
-	type SliceIter<'a> = MySliceIter<'a>;
-	type MutSliceIter<'a> = MyOtherSliceIter<'a>;
+	type SliceIter<'a> = CaptureIter<'a>;
+	type MutSliceIter<'a> = PlaybackCaptureIter<'a>;
 	type Scope = jack::ProcessScope;
 
 	fn info(&self) -> AudioDeviceInfo {
@@ -169,11 +169,11 @@ impl AudioDeviceTrait for AudioDevice {
 	}
 
 	fn playback_and_capture_buffers(&'a mut self, scope: &'a jack::ProcessScope) -> Self::MutSliceIter<'a> {
-		MyOtherSliceIter(scope, self.channels.iter_mut())
+		PlaybackCaptureIter(scope, self.channels.iter_mut())
 	}
 
 	fn record_buffers(&'a self, scope: &'a jack::ProcessScope) -> Self::SliceIter<'a> {
-		MySliceIter(scope, self.channels.iter())
+		CaptureIter(scope, self.channels.iter())
 	}
 }
 

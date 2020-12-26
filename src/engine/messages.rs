@@ -1,4 +1,4 @@
-use super::jack_driver::*;
+use super::jack_driver::{AudioDevice, MidiDevice};
 use super::takes::{AudioTakeNode,MidiTakeNode};
 
 

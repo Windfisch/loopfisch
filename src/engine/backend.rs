@@ -7,7 +7,7 @@ use super::messages::*;
 use core::cmp::min;
 use intrusive_collections::LinkedList;
 use std::sync::Arc;
-use super::jack_driver::*;
+use super::jack_driver::{AudioDevice, MidiDevice};
 use super::driver_traits::*;
 
 use super::metronome::AudioMetronome;

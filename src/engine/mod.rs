@@ -32,7 +32,7 @@ use std::sync::Arc;
 use crate::id_generator::IdGenerator;
 use driver_traits::*;
 
-use jack_driver::*;
+use jack_driver::{AudioDevice, MidiDevice, Notifications};
 
 use metronome::AudioMetronome;
 use midiclock::MidiClock;

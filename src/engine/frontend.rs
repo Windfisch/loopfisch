@@ -1,16 +1,12 @@
 use super::shared::SharedThreadState;
-use super::data::RecordState;
 use super::takes::{MidiTake,MidiTakeNode,AudioTake,AudioTakeNode};
 use super::retry_channel::RetryChannelPush;
 use super::messages::Message;
 use super::driver_traits::*;
 use std::sync::Arc;
-use std::cell::RefCell;
 use std::collections::HashMap;
 use crate::id_generator::IdGenerator;
-use super::jack_driver::*;
-use super::midi_registry::MidiNoteRegistry;
-use crate::outsourced_allocation_buffer::Buffer;
+use super::jack_driver::{AudioDevice, MidiDevice};
 
 const CHUNKSIZE: usize = 8*1024;
 
