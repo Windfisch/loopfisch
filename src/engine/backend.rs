@@ -7,7 +7,6 @@ use super::messages::*;
 use core::cmp::min;
 use intrusive_collections::LinkedList;
 use std::sync::Arc;
-use super::jack_driver::{AudioDevice, MidiDevice};
 use super::driver_traits::*;
 
 use super::metronome::AudioMetronome;
@@ -74,14 +73,19 @@ impl MidiDeviceSettings {
 	}
 }
 
-pub struct AudioThreadState {
+pub struct AudioThreadState<AudioDevice, MidiDevice, ProcessScope>
+	where
+		AudioDevice: AudioDeviceTrait<Scope = ProcessScope>,
+		MidiDevice: MidiDeviceTrait<Scope = ProcessScope>,
+		ProcessScope: ProcessScopeTrait,
+{
 	devices: Vec<Option<(AudioDevice, AudioDeviceSettings)>>,
 	mididevices: Vec<Option<(MidiDevice, MidiDeviceSettings)>>,
 	metronome: AudioMetronome<AudioDevice>,
 	midiclock: MidiClock<MidiDevice>,
 	audiotakes: LinkedList<AudioTakeAdapter>,
 	miditakes: LinkedList<MidiTakeAdapter>,
-	command_channel: ringbuf::Consumer<Message>,
+	command_channel: ringbuf::Consumer<Message<AudioDevice, MidiDevice>>,
 	transport_position: u32, // does not wrap 
 	song_position: u32, // wraps
 	song_length: u32,
@@ -89,10 +93,15 @@ pub struct AudioThreadState {
 	shared: Arc<SharedThreadState>,
 	event_channel: realtime_send_queue::Producer<Event>,
 	destructor_thread_handle: std::thread::JoinHandle<()>,
-	destructor_channel: ringbuf::Producer<DestructionRequest>
+	destructor_channel: ringbuf::Producer<DestructionRequest<AudioDevice, MidiDevice>>
 }
 
-impl Drop for AudioThreadState {
+impl<AudioDevice, MidiDevice, ProcessScope> Drop for AudioThreadState<AudioDevice, MidiDevice, ProcessScope>
+	where
+		AudioDevice: AudioDeviceTrait<Scope = ProcessScope>,
+		MidiDevice: MidiDeviceTrait<Scope = ProcessScope>,
+		ProcessScope: ProcessScopeTrait
+{
 	fn drop(&mut self) {
 		println!("\n\n\n############# Dropping AudioThreadState\n\n\n");
 		self.event_channel.send(Event::Kill).ok();
@@ -100,11 +109,16 @@ impl Drop for AudioThreadState {
 	}
 }
 
-impl AudioThreadState {
+impl<AudioDevice, MidiDevice, ProcessScope> AudioThreadState<AudioDevice, MidiDevice, ProcessScope>
+	where
+		AudioDevice: AudioDeviceTrait<Scope = ProcessScope> + Send + 'static,
+		MidiDevice: MidiDeviceTrait<Scope = ProcessScope> + Send + 'static,
+		ProcessScope: ProcessScopeTrait
+{
 	// FIXME this function signature sucks
-	pub fn new(audiodevices: Vec<AudioDevice>, mididevices: Vec<MidiDevice>, metronome: AudioMetronome<AudioDevice>, midiclock: MidiClock<MidiDevice>, command_channel: ringbuf::Consumer<Message>, song_length: u32, shared: Arc<SharedThreadState>, event_channel: realtime_send_queue::Producer<Event>) -> AudioThreadState
+	pub fn new(audiodevices: Vec<AudioDevice>, mididevices: Vec<MidiDevice>, metronome: AudioMetronome<AudioDevice>, midiclock: MidiClock<MidiDevice>, command_channel: ringbuf::Consumer<Message<AudioDevice, MidiDevice>>, song_length: u32, shared: Arc<SharedThreadState>, event_channel: realtime_send_queue::Producer<Event>) -> AudioThreadState<AudioDevice, MidiDevice, ProcessScope>
 	{
-		let (destruction_sender, mut destruction_receiver) = ringbuf::RingBuffer::<DestructionRequest>::new(32).split();
+		let (destruction_sender, mut destruction_receiver) = ringbuf::RingBuffer::<DestructionRequest<AudioDevice, MidiDevice>>::new(32).split();
 		let destructor_thread_handle = std::thread::spawn(move || {
 			loop {
 				std::thread::park();
@@ -138,7 +152,7 @@ impl AudioThreadState {
 		}
 	}
 
-	pub fn process_callback(&mut self, client: &jack::Client, scope: &jack::ProcessScope) -> jack::Control {
+	pub fn process_callback(&mut self, client: &jack::Client, scope: &ProcessScope) -> jack::Control {
 		assert_no_alloc(||{
 			assert!(scope.n_frames() < self.song_length);
 
@@ -272,7 +286,7 @@ impl AudioThreadState {
 		}
 	}
 
-	fn process_audio_playback(&mut self, scope: &jack::ProcessScope) {
+	fn process_audio_playback(&mut self, scope: &ProcessScope) {
 		for dev in self.devices.iter_mut() {
 			if let Some(d) = dev {
 				if d.1.echo {
@@ -293,7 +307,7 @@ impl AudioThreadState {
 		}
 	}
 
-	fn process_midi_playback(&mut self, scope: &jack::ProcessScope) {
+	fn process_midi_playback(&mut self, scope: &ProcessScope) {
 		let mut cursor = self.miditakes.front();
 		while let Some(node) = cursor.get() {
 			let mut t = node.take.borrow_mut();
@@ -328,8 +342,7 @@ impl AudioThreadState {
 		}
 	}
 
-
-	fn process_audio_recording(&mut self, scope: &jack::ProcessScope) {
+	fn process_audio_recording(&mut self, scope: &ProcessScope) {
 		use RecordState::*;
 		let mut cursor = self.audiotakes.front();
 		while let Some(node) = cursor.get() {
@@ -367,7 +380,7 @@ impl AudioThreadState {
 		}
 	}
 
-	fn process_midi_recording(&mut self, scope: &jack::ProcessScope) {
+	fn process_midi_recording(&mut self, scope: &ProcessScope) {
 		use RecordState::*;
 		let mut cursor = self.miditakes.front();
 		while let Some(node) = cursor.get() {

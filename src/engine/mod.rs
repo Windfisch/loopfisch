@@ -45,7 +45,7 @@ pub fn create_thread_states(client: jack::Client, devices: Vec<AudioDevice>, mid
 		transport_position: AtomicU32::new(0),
 	});
 
-	let (command_sender, command_receiver) = ringbuf::RingBuffer::<Message>::new(16).split();
+	let (command_sender, command_receiver) = ringbuf::RingBuffer::<Message<AudioDevice, MidiDevice>>::new(16).split();
 
 	let frontend_devices = devices.iter().enumerate().map(|d| (d.0, frontend::GuiAudioDevice { info: d.1.info(), takes: HashMap::new() }) ).collect();
 	let frontend_mididevices = mididevices.iter().enumerate().map(|d| (d.0, frontend::GuiMidiDevice { info: d.1.info(), takes: HashMap::new() }) ).collect();

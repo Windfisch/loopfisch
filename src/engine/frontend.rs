@@ -64,7 +64,7 @@ where
 }
 
 pub struct FrontendThreadState {
-	pub command_channel: RetryChannelPush<Message>,
+	pub command_channel: RetryChannelPush<Message<AudioDevice, MidiDevice>>,
 	pub devices: HashMap<usize, GuiAudioDevice>,
 	pub mididevices: HashMap<usize, GuiMidiDevice>,
 	pub shared: Arc<SharedThreadState>,
