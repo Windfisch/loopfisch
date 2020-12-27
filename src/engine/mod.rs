@@ -24,7 +24,7 @@ pub use data::{Event, RecordState};
 use shared::SharedThreadState;
 
 use messages::*;
-pub use frontend::{GenericFrontendThreadState, FrontendThreadState}; // FIXME TODO put this type alias somewhere else
+pub use frontend::{FrontendTrait, FrontendThreadState};
 use retry_channel::*;
 
 use std::sync::atomic::*;
@@ -38,7 +38,7 @@ use crate::realtime_send_queue;
 
 pub use jack_driver::JackDriver;
 
-fn create_thread_states<Driver: DriverTrait>(mut driver: Driver, devices: Vec<Driver::AudioDev>, mididevices: Vec<Driver::MidiDev>, song_length: u32) -> (GenericFrontendThreadState<Driver>, realtime_send_queue::Consumer<Event>) {
+fn create_thread_states<Driver: DriverTrait>(mut driver: Driver, devices: Vec<Driver::AudioDev>, mididevices: Vec<Driver::MidiDev>, song_length: u32) -> (FrontendThreadState<Driver>, realtime_send_queue::Consumer<Event>) {
 	let shared = Arc::new(SharedThreadState {
 		song_length: AtomicU32::new(song_length),
 		song_position: AtomicU32::new(0),
@@ -59,7 +59,7 @@ fn create_thread_states<Driver: DriverTrait>(mut driver: Driver, devices: Vec<Dr
 
 	driver.activate(audio_thread_state);
 
-	let frontend_thread_state = GenericFrontendThreadState {
+	let frontend_thread_state = FrontendThreadState {
 		command_channel: RetryChannelPush(command_sender),
 		devices: frontend_devices,
 		mididevices: frontend_mididevices,
@@ -71,7 +71,7 @@ fn create_thread_states<Driver: DriverTrait>(mut driver: Driver, devices: Vec<Dr
 	return (frontend_thread_state, event_consumer);
 }
 
-pub fn launch<Driver: DriverTrait>(driver: Driver, loop_length_msec: u32) -> (GenericFrontendThreadState<Driver>, realtime_send_queue::Consumer<Event>) {
+pub fn launch<Driver: DriverTrait>(driver: Driver, loop_length_msec: u32) -> (FrontendThreadState<Driver>, realtime_send_queue::Consumer<Event>) {
 
 	let loop_length = driver.sample_rate() as u32 * loop_length_msec / 1000;
 	let (frontend_thread_state, event_queue) = create_thread_states(driver, vec![], vec![], loop_length);

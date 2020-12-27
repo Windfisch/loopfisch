@@ -6,6 +6,13 @@ pub struct MidiNoteRegistry {
 	playing_notes: [[u8; 128]; 16]
 }
 
+impl std::fmt::Debug for MidiNoteRegistry {
+	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+		let notes: Vec<_> = self.active_notes().collect();
+		notes.fmt(f)
+	}
+}
+
 
 impl MidiNoteRegistry {
 	pub fn new() -> MidiNoteRegistry {

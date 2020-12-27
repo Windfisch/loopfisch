@@ -44,6 +44,6 @@ async fn main() {
     println!("Hello, world!");
 
 	let (engine, event_queue) = engine::launch(engine::JackDriver::new(), 6000);
-	rest_api::launch_server(engine, event_queue).await;
+	rest_api::launch_server(Box::new(engine), event_queue).await;
 	return;
 }

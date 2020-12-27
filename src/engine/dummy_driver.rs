@@ -5,6 +5,7 @@ use super::midi_registry::MidiNoteRegistry;
 use std::slice::*;
 use std::iter::*;
 
+#[derive(Debug)]
 pub struct DummyMidiDevice {
 	queue: Vec<MidiMessage>,
 	pub committed: Vec<MidiMessage>,
@@ -107,7 +108,7 @@ impl MidiDeviceTrait for DummyMidiDevice {
 	fn capture_latency(&self) -> u32 { unimplemented!(); }
 }
 
-impl MidiDeviceTrait for &mut DummyMidiDevice {
+impl MidiDeviceTrait for &'static mut DummyMidiDevice {
 	type Event<'a> = DummyMidiEvent;
 	type EventIterator<'a> = Box<dyn Iterator<Item=DummyMidiEvent> + 'a>;
 	type Scope = DummyScope;
@@ -122,7 +123,7 @@ impl MidiDeviceTrait for &mut DummyMidiDevice {
 	fn capture_latency(&self) -> u32 { (**self).capture_latency() }
 }
 
-
+#[derive(Debug)]
 pub struct DummyAudioDevice {
 	pub playback_latency: u32,
 	pub capture_latency: u32,

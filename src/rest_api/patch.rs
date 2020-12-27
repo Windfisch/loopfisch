@@ -4,7 +4,7 @@ use rocket::State;
 use rocket::http::Status;
 use serde::Deserialize;
 use super::updates::*;
-use crate::engine::FrontendThreadState;
+use crate::engine::FrontendTrait;
 
 #[derive(Deserialize,Clone)]
 pub struct SongPatch {
@@ -15,7 +15,7 @@ pub struct SongPatch {
 #[patch("/song", data="<patch>")]
 pub async fn song_patch(state: State<'_, std::sync::Arc<GuiState>>, patch: Json<SongPatch>) -> Result<(), Status> {
 	let mut guard = state.mutex.lock().await;
-	let e = &mut guard.engine;
+	let e = guard.engine.as_mut();
 
 	if let Some(loop_length) = patch.loop_length {
 		if let Some(beats) = patch.beats {
@@ -67,8 +67,8 @@ pub struct TakePatch {
 pub async fn patch_synths(state: State<'_, std::sync::Arc<GuiState>>, patch: Json<Vec<SynthPatch>>) -> Result<(), Status> {
 	let mut guard_ = state.mutex.lock().await;
 	let guard = &mut *guard_;
-	patch_synths_(&mut guard.engine, &mut guard.synths, &*patch, true)?;
-	patch_synths_(&mut guard.engine, &mut guard.synths, &*patch, false).unwrap();
+	patch_synths_(guard.engine.as_mut(), &mut guard.synths, &*patch, true)?;
+	patch_synths_(guard.engine.as_mut(), &mut guard.synths, &*patch, false).unwrap();
 	for p in patch.iter() {
 		state.update_list.push(make_update_synth(guard.synths.iter().find(|s| s.id == p.id).unwrap())).await;
 	}
@@ -82,8 +82,8 @@ pub async fn patch_synth(state: State<'_, std::sync::Arc<GuiState>>, id: u32, pa
 	}
 	let mut guard_ = state.mutex.lock().await;
 	let guard = &mut *guard_;
-	patch_synth_(&mut guard.engine, &mut guard.synths, &*patch, true)?;
-	patch_synth_(&mut guard.engine, &mut guard.synths, &*patch, false).unwrap();
+	patch_synth_(guard.engine.as_mut(), &mut guard.synths, &*patch, true)?;
+	patch_synth_(guard.engine.as_mut(), &mut guard.synths, &*patch, false).unwrap();
 	state.update_list.push(make_update_synth(guard.synths.iter().find(|s| s.id == patch.id).unwrap())).await;
 	Ok(())
 }
@@ -93,8 +93,8 @@ pub async fn patch_chains(state: State<'_, std::sync::Arc<GuiState>>, synthid: u
 	let mut guard_ = state.mutex.lock().await;
 	let guard = &mut *guard_;
 	if let Some(synth) = guard.synths.iter_mut().find(|s| s.id == synthid) {
-		patch_chains_(&mut guard.engine, synth.engine_mididevice_id, &mut synth.chains, &*patch, true)?;
-		patch_chains_(&mut guard.engine, synth.engine_mididevice_id, &mut synth.chains, &*patch, false).unwrap();
+		patch_chains_(guard.engine.as_mut(), synth.engine_mididevice_id, &mut synth.chains, &*patch, true)?;
+		patch_chains_(guard.engine.as_mut(), synth.engine_mididevice_id, &mut synth.chains, &*patch, false).unwrap();
 		for p in patch.iter() {
 			state.update_list.push(make_update_chain(synth.chains.iter().find(|s| s.id == p.id).unwrap(), synthid)).await;
 		}
@@ -111,8 +111,8 @@ pub async fn patch_chain(state: State<'_, std::sync::Arc<GuiState>>, synthid: u3
 		if chainid != patch.id {
 			return Err(Status::UnprocessableEntity);
 		}
-		patch_chain_(&mut guard.engine, synth.engine_mididevice_id, &mut synth.chains, &*patch, true)?;
-		patch_chain_(&mut guard.engine, synth.engine_mididevice_id, &mut synth.chains, &*patch, false).unwrap();
+		patch_chain_(guard.engine.as_mut(), synth.engine_mididevice_id, &mut synth.chains, &*patch, true)?;
+		patch_chain_(guard.engine.as_mut(), synth.engine_mididevice_id, &mut synth.chains, &*patch, false).unwrap();
 		state.update_list.push(make_update_chain(synth.chains.iter().find(|s| s.id == patch.id).unwrap(), synthid)).await;
 		return Ok(());
 	}
@@ -125,8 +125,8 @@ pub async fn patch_takes(state: State<'_, std::sync::Arc<GuiState>>, synthid: u3
 	let guard = &mut *guard_;
 	if let Some(synth) = guard.synths.iter_mut().find(|s| s.id == synthid) {
 		if let Some(chain) = synth.chains.iter_mut().find(|c| c.id == chainid) {
-			patch_takes_(&mut guard.engine, synth.engine_mididevice_id, chain.engine_audiodevice_id, &mut chain.takes, &*patch, true)?;
-			patch_takes_(&mut guard.engine, synth.engine_mididevice_id, chain.engine_audiodevice_id, &mut chain.takes, &*patch, false).unwrap();
+			patch_takes_(guard.engine.as_mut(), synth.engine_mididevice_id, chain.engine_audiodevice_id, &mut chain.takes, &*patch, true)?;
+			patch_takes_(guard.engine.as_mut(), synth.engine_mididevice_id, chain.engine_audiodevice_id, &mut chain.takes, &*patch, false).unwrap();
 			for p in patch.iter() {
 				state.update_list.push(make_update_take(chain.takes.iter().find(|s| s.id == p.id).unwrap(), synthid, chainid)).await;
 			}
@@ -145,8 +145,8 @@ pub async fn patch_take(state: State<'_, std::sync::Arc<GuiState>>, synthid: u32
 			if takeid != patch.id {
 				return Err(Status::UnprocessableEntity);
 			}
-			patch_take_(&mut guard.engine, synth.engine_mididevice_id, chain.engine_audiodevice_id, &mut chain.takes, &*patch, true)?;
-			patch_take_(&mut guard.engine, synth.engine_mididevice_id, chain.engine_audiodevice_id, &mut chain.takes, &*patch, false).unwrap();
+			patch_take_(guard.engine.as_mut(), synth.engine_mididevice_id, chain.engine_audiodevice_id, &mut chain.takes, &*patch, true)?;
+			patch_take_(guard.engine.as_mut(), synth.engine_mididevice_id, chain.engine_audiodevice_id, &mut chain.takes, &*patch, false).unwrap();
 			state.update_list.push(make_update_take(chain.takes.iter().find(|s| s.id == patch.id).unwrap(), synthid, chainid)).await;
 			return Ok(());
 		}
@@ -154,14 +154,14 @@ pub async fn patch_take(state: State<'_, std::sync::Arc<GuiState>>, synthid: u32
 	Err(Status::NotFound)
 }
 
-fn patch_synths_(engine: &mut FrontendThreadState, synths: &mut Vec<Synth>, patch: &Vec<SynthPatch>, check: bool) -> Result<(), Status> {
+fn patch_synths_(engine: &mut dyn FrontendTrait, synths: &mut Vec<Synth>, patch: &Vec<SynthPatch>, check: bool) -> Result<(), Status> {
 	for synth in patch.iter() {
 		patch_synth_(engine, synths, synth, check)?;
 	}
 	Ok(())
 }
 
-fn patch_synth_(engine: &mut FrontendThreadState, synths: &mut Vec<Synth>, patch: &SynthPatch, check: bool) -> Result<(), Status> {
+fn patch_synth_(engine: &mut dyn FrontendTrait, synths: &mut Vec<Synth>, patch: &SynthPatch, check: bool) -> Result<(), Status> {
 	if let Some(synth_to_patch) = synths.iter_mut().find(|s| s.id == patch.id) {
 		if let Some(chains) = &patch.chains {
 			patch_chains_(engine, synth_to_patch.engine_mididevice_id, &mut synth_to_patch.chains, chains, check)?;
@@ -179,14 +179,14 @@ fn patch_synth_(engine: &mut FrontendThreadState, synths: &mut Vec<Synth>, patch
 	}
 }
 
-fn patch_chains_(engine: &mut FrontendThreadState, mididevice_id: usize, chains: &mut Vec<Chain>, patch: &Vec<ChainPatch>, check: bool) -> Result<(), Status> {
+fn patch_chains_(engine: &mut dyn FrontendTrait, mididevice_id: usize, chains: &mut Vec<Chain>, patch: &Vec<ChainPatch>, check: bool) -> Result<(), Status> {
 	for chain in patch.iter() {
 		patch_chain_(engine, mididevice_id, chains, chain, check)?;
 	}
 	Ok(())
 }
 
-fn patch_chain_(engine: &mut FrontendThreadState, mididevice_id: usize, chains: &mut Vec<Chain>, patch: &ChainPatch, check: bool) -> Result<(), Status> {
+fn patch_chain_(engine: &mut dyn FrontendTrait, mididevice_id: usize, chains: &mut Vec<Chain>, patch: &ChainPatch, check: bool) -> Result<(), Status> {
 	if let Some(chain_to_patch) = chains.iter_mut().find(|s| s.id == patch.id) {
 		if let Some(takes) = &patch.takes {
 			patch_takes_(engine, mididevice_id, chain_to_patch.engine_audiodevice_id, &mut chain_to_patch.takes, takes, check)?;
@@ -208,14 +208,14 @@ fn patch_chain_(engine: &mut FrontendThreadState, mididevice_id: usize, chains: 
 	}
 }
 
-fn patch_takes_(engine: &mut FrontendThreadState, mididevice_id: usize, audiodevice_id: usize, takes: &mut Vec<Take>, patch: &Vec<TakePatch>, check: bool) -> Result<(), Status> {
+fn patch_takes_(engine: &mut dyn FrontendTrait, mididevice_id: usize, audiodevice_id: usize, takes: &mut Vec<Take>, patch: &Vec<TakePatch>, check: bool) -> Result<(), Status> {
 	for take in patch.iter() {
 		patch_take_(engine, mididevice_id, audiodevice_id, takes, take, check)?;
 	}
 	Ok(())
 }
 
-fn patch_take_(engine: &mut FrontendThreadState, mididevice_id: usize, audiodevice_id: usize, takes: &mut Vec<Take>, patch: &TakePatch, check: bool) -> Result<(), Status> {
+fn patch_take_(engine: &mut dyn FrontendTrait, mididevice_id: usize, audiodevice_id: usize, takes: &mut Vec<Take>, patch: &TakePatch, check: bool) -> Result<(), Status> {
 	if let Some(take_to_patch) = takes.iter_mut().find(|s| s.id == patch.id) {
 		if !check {
 			if let Some(name) = &patch.name {

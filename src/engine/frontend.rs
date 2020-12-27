@@ -43,9 +43,25 @@ impl GuiMidiDevice {
 	pub fn takes(&self) -> &HashMap<u32, GuiMidiTake> { &self.takes }
 }
 
-pub type FrontendThreadState = GenericFrontendThreadState<super::jack_driver::JackDriver>; // FIXME this does not belong here
+/** Creates a new trait with the functions specified and an implementation
+  * with the specified function bodies */
+macro_rules! new_trait_with_impl {
+	{
+		impl <$($implparams:tt: $implbound:tt),+> new pub $trait:ident for $struct:ident <$($structparams:tt),+> {
+			$( pub fn $funcname:ident $args:tt $(-> $ret:ty)* $impl:block )+
+		}
+	} =>
+	{
+		pub trait $trait: Send {
+			$(fn $funcname $args $(-> $ret)*;)+
+		}
+		impl <$($implparams: $implbound),+> $trait for $struct <$($structparams),+> {
+			$(fn $funcname $args $(-> $ret)* $impl )+
+		}
+	}
+}
 
-pub struct GenericFrontendThreadState<Driver: DriverTrait> { // FIXME rename this back to FrontendThreadState
+pub struct FrontendThreadState<Driver: DriverTrait> {
 	pub command_channel: RetryChannelPush<Message<Driver::AudioDev, Driver::MidiDev>>,
 	pub devices: HashMap<usize, GuiAudioDevice>,
 	pub mididevices: HashMap<usize, GuiMidiDevice>,
@@ -54,7 +70,8 @@ pub struct GenericFrontendThreadState<Driver: DriverTrait> { // FIXME rename thi
 	pub driver: Driver
 }
 
-impl<Driver: DriverTrait> GenericFrontendThreadState<Driver> {
+new_trait_with_impl! {
+impl<Driver: DriverTrait> new pub FrontendTrait for FrontendThreadState<Driver> {
 	pub fn sample_rate(&self) -> u32 {
 		self.driver.sample_rate()
 	}
@@ -175,6 +192,7 @@ impl<Driver: DriverTrait> GenericFrontendThreadState<Driver> {
 		take.unmuted = unmuted;
 		Ok(())
 	}
+}
 }
 
 fn find_first_free_index<T>(map: &HashMap<usize, T>, max: usize) -> Option<usize> {
