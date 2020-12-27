@@ -108,21 +108,6 @@ impl MidiDeviceTrait for DummyMidiDevice {
 	fn capture_latency(&self) -> u32 { unimplemented!(); }
 }
 
-impl MidiDeviceTrait for &'static mut DummyMidiDevice {
-	type Event<'a> = DummyMidiEvent;
-	type EventIterator<'a> = Box<dyn Iterator<Item=DummyMidiEvent> + 'a>;
-	type Scope = DummyScope;
-
-	fn incoming_events(&'a self, scope: &'a Self::Scope) -> Self::EventIterator<'a> { (**self).incoming_events(scope) }
-	fn commit_out_buffer(&mut self, scope: &Self::Scope) { (**self).commit_out_buffer(scope) }
-	fn queue_event(&mut self, msg: MidiMessage) -> Result<(), ()> { (**self).queue_event(msg) }
-	fn update_registry(&mut self, scope: &Self::Scope) { (**self).update_registry(scope) }
-	fn clone_registry(&self) -> super::midi_registry::MidiNoteRegistry { (**self).clone_registry() }
-	fn info(&self) -> MidiDeviceInfo { (**self).info() }
-	fn playback_latency(&self) -> u32 { (**self).playback_latency() }
-	fn capture_latency(&self) -> u32 { (**self).capture_latency() }
-}
-
 #[derive(Debug)]
 pub struct DummyAudioDevice {
 	pub playback_latency: u32,

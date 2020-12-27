@@ -51,6 +51,7 @@ mod tests {
 	use super::super::dummy_driver::*;
 	use super::*;
 	use super::super::testutils::spacing;
+	use std::sync::Arc;
 
 
 
@@ -61,12 +62,12 @@ mod tests {
 			for n_beats in 4..9 {
 				let song_length = sample_rate * n_beats *60/bpm;
 				
-				let mut device = DummyMidiDevice::new(0);
-				let mut clock = MidiClock::new( &mut device );
+				let device = DummyMidiDevice::new(0);
+				let mut clock = MidiClock::new(device) ;
 				let mut scope = DummyScope::new();
 				scope.next(4 * song_length);
 				clock.process(scope.time % song_length, song_length, n_beats, &scope);
-				assert!(device.committed.len() as u32 == 4*24*n_beats);
+				assert!(clock.device.committed.len() as u32 == 4*24*n_beats);
 			}
 		}
 	}
@@ -78,12 +79,12 @@ mod tests {
 			let n_beats = 8;
 			let song_length = sample_rate * n_beats *60/bpm;
 			
-			let mut device = DummyMidiDevice::new(0);
-			let mut clock = MidiClock::new( &mut device );
+			let device = DummyMidiDevice::new(0);
+			let mut clock = MidiClock::new(device) ;
 			let mut scope = DummyScope::new();
 
 			scope.run_for(1000*song_length, 1024, |scope| clock.process(scope.time, song_length, n_beats, scope));
-			assert!(device.committed.len() as u32 == 1000*24*n_beats);
+			assert!(clock.device.committed.len() as u32 == 1000*24*n_beats);
 		}
 
 	}
@@ -96,12 +97,12 @@ mod tests {
 				let song_length = sample_rate * n_beats *60/bpm;
 
 				for latency in [0, 1, 32, 51, 256, 4096].iter() {
-					let mut device = DummyMidiDevice::new(*latency);
-					let mut clock = MidiClock::new( &mut device );
+					let device = DummyMidiDevice::new(*latency);
+					let mut clock = MidiClock::new(device) ;
 					let mut scope = DummyScope::new();
 					scope.next(10*song_length);
 					clock.process(scope.time % song_length, song_length, n_beats, &scope);
-					assert!(device.committed.len() as u32 == 10*24*n_beats);
+					assert!(clock.device.committed.len() as u32 == 10*24*n_beats);
 				}
 			}
 		}
@@ -114,12 +115,12 @@ mod tests {
 			for n_beats in 4..9 {
 				let song_length = sample_rate * n_beats *60/bpm;
 				
-				let mut device = DummyMidiDevice::new(0);
-				let mut clock = MidiClock::new( &mut device );
+				let device = DummyMidiDevice::new(0);
+				let mut clock = MidiClock::new(device) ;
 				let mut scope = DummyScope::new();
 				scope.next(song_length + 1);
 				clock.process(scope.time % song_length, song_length, n_beats, &scope);
-				assert!(device.committed.len() as u32 == 24*n_beats + 1);
+				assert!(clock.device.committed.len() as u32 == 24*n_beats + 1);
 			}
 		}
 	}
@@ -131,14 +132,14 @@ mod tests {
 		for bpm in [113, 116, 127].iter() {
 			let song_length = sample_rate * n_beats *60/bpm;
 			for chunksize in [1, 32, 51, 127, 128, 1024, 4096, 4*song_length].iter() {
-				let mut device = DummyMidiDevice::new(128);
-				let mut clock = MidiClock::new( &mut device );
+				let device = DummyMidiDevice::new(128);
+				let mut clock = MidiClock::new(device) ;
 				let mut scope = DummyScope::new();
 				for _ in 0..(4*song_length/chunksize) {
 					scope.next(*chunksize);
 					clock.process(scope.time % song_length, song_length, n_beats, &scope);
 				}
-				let (lo, hi) = spacing(device.committed.iter().map(|x| x.timestamp));
+				let (lo, hi) = spacing(clock.device.committed.iter().map(|x| x.timestamp));
 				assert!(hi-lo <= 1);
 			}
 		}
@@ -153,24 +154,24 @@ mod tests {
 			let song_length = sample_rate * n_beats *60/bpm;
 
 			let reference = {
-				let mut device = DummyMidiDevice::new(128);
-				let mut clock = MidiClock::new( &mut device );
+				let device = DummyMidiDevice::new(128);
+				let mut clock = MidiClock::new(device) ;
 				let mut scope = DummyScope::new();
 				scope.next(4*song_length);
 				clock.process(scope.time % song_length, song_length, n_beats, &scope);
-				device.committed
+				clock.device.committed.clone()
 			};
 
 			for chunksize in [1, 32, 51, 127, 128, 1024, 4096].iter() {
-				let mut device = DummyMidiDevice::new(128);
-				let mut clock = MidiClock::new( &mut device );
+				let device = DummyMidiDevice::new(128);
+				let mut clock = MidiClock::new(device) ;
 				let mut scope = DummyScope::new();
 				for _ in 0..(4*song_length/chunksize) {
 					scope.next(*chunksize);
 					clock.process(scope.time % song_length, song_length, n_beats, &scope);
 				}
 				assert!(
-					device.committed.iter().zip( reference.iter() )
+					clock.device.committed.iter().zip( reference.iter() )
 						.all(|pair| pair.0 == pair.1)
 				);
 			}
@@ -185,12 +186,12 @@ mod tests {
 				let song_length = sample_rate * n_beats *60/bpm;
 
 				for latency in [0, 1, 32, 51, 256, 4096].iter() {
-					let mut device = DummyMidiDevice::new(*latency);
-					let mut clock = MidiClock::new( &mut device );
+					let device = DummyMidiDevice::new(*latency);
+					let mut clock = MidiClock::new(device) ;
 					let mut scope = DummyScope::new();
 					scope.next(2*song_length);
 					clock.process(scope.time % song_length, song_length, n_beats, &scope);
-					assert!(device.committed.iter().filter(|x| x.timestamp == song_length-latency).count() == 1);
+					assert!(clock.device.committed.iter().filter(|x| x.timestamp == song_length-latency).count() == 1);
 				}
 			}
 		}
