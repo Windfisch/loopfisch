@@ -183,8 +183,8 @@ impl MidiDeviceTrait for MidiDevice {
 
 #[derive(Debug)]
 struct AudioChannel {
-	pub in_port: jack::Port<jack::AudioIn>, // FIXME: these shouldn't be pub; there should be
-	pub out_port: jack::Port<jack::AudioOut>, // an abstraction layer around the driver
+	in_port: jack::Port<jack::AudioIn>,
+	out_port: jack::Port<jack::AudioOut>,
 }
 
 impl AudioChannel {
