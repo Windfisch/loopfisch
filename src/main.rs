@@ -18,6 +18,9 @@
 #![feature(in_band_lifetimes)]
 #![feature(generic_associated_types)]
 
+#[cfg(test)]
+mod owning_iter;
+
 mod engine;
 mod midi_message;
 mod outsourced_allocation_buffer;

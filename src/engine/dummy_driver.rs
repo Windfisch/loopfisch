@@ -2,6 +2,7 @@ use crate::midi_message::MidiMessage;
 use super::driver_traits::*;
 use super::midi_registry::MidiNoteRegistry;
 
+use std::sync::{Arc, Mutex};
 use std::slice::*;
 use std::iter::*;
 
@@ -162,5 +163,33 @@ impl AudioDeviceTrait for DummyAudioDevice {
 	}
 	fn record_buffers(&self, scope: &DummyScope) -> CaptureIter {
 		CaptureIter(self.capture_buffers.iter(), scope.time as usize)
+	}
+}
+
+impl AudioDeviceTrait for Arc<Mutex<DummyAudioDevice>> {
+	type Scope = <DummyAudioDevice as AudioDeviceTrait>::Scope;
+	type MutSliceIter<'a> = Box<dyn Iterator<Item = (&'a mut[f32], &'a [f32])> + 'a>;
+	type SliceIter<'a> = Box<dyn Iterator<Item = &'a [f32]> + 'a>;
+
+	fn info(&self) -> AudioDeviceInfo { self.lock().unwrap().info() }
+	fn playback_latency(&self) -> u32 { self.lock().unwrap().playback_latency() }
+	fn capture_latency(&self) -> u32 { self.lock().unwrap().capture_latency() }
+	fn playback_and_capture_buffers<'a>(&'a mut self, scope: &'a DummyScope) -> Self::MutSliceIter<'a> {
+		use crate::owning_iter::OwningIterator;
+		Box::new(
+			OwningIterator::new(
+				self.lock().unwrap(),
+				|v| unsafe { (*v).playback_and_capture_buffers(&scope) }
+			)
+		)
+	}
+	fn record_buffers<'a>(&'a self, scope: &'a DummyScope) -> Self::SliceIter<'a> {
+		use crate::owning_iter::OwningIterator;
+		Box::new(
+			OwningIterator::new(
+				self.lock().unwrap(),
+				|v| unsafe { (*v).record_buffers(&scope)
+			})
+		)
 	}
 }
