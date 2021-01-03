@@ -5,6 +5,7 @@ use super::midi_registry::MidiNoteRegistry;
 use std::sync::{Arc, Mutex};
 use std::slice::*;
 use std::iter::*;
+use crate::owning_iter::OwningIterator;
 
 #[derive(Debug)]
 pub struct DummyMidiDevice {
@@ -98,7 +99,7 @@ impl MidiDeviceTrait for DummyMidiDevice {
 		self.queue.push(msg);
 		Ok(())
 	}
-	fn update_registry(&mut self, scope: &Self::Scope) { unimplemented!(); }
+	fn update_registry(&mut self, _scope: &Self::Scope) { unimplemented!(); }
 	fn clone_registry(&self) -> super::midi_registry::MidiNoteRegistry {
 		self.registry.clone()
 	}
@@ -107,6 +108,28 @@ impl MidiDeviceTrait for DummyMidiDevice {
 		self.latency
 	}
 	fn capture_latency(&self) -> u32 { unimplemented!(); }
+}
+
+impl MidiDeviceTrait for Arc<Mutex<DummyMidiDevice>> {
+	type Event<'a> = DummyMidiEvent;
+	type EventIterator<'a> = Box<dyn Iterator<Item=DummyMidiEvent> + 'a>;
+	type Scope = DummyScope;
+
+	fn incoming_events(&'a self, scope: &'a Self::Scope) -> Self::EventIterator<'a> {
+		Box::new(
+			OwningIterator::new(
+				self.lock().unwrap(),
+				|v| unsafe {(*v).incoming_events(scope)}
+			)
+		)
+	}
+	fn commit_out_buffer(&mut self, scope: &Self::Scope) { self.lock().unwrap().commit_out_buffer(scope) }
+	fn queue_event(&mut self, msg: MidiMessage) -> Result<(), ()> { self.lock().unwrap().queue_event(msg) }
+	fn update_registry(&mut self, scope: &Self::Scope) { self.lock().unwrap().update_registry(scope) }
+	fn clone_registry(&self) -> super::midi_registry::MidiNoteRegistry { self.lock().unwrap().clone_registry() }
+	fn info(&self) -> MidiDeviceInfo { self.lock().unwrap().info() }
+	fn playback_latency(&self) -> u32 { self.lock().unwrap().playback_latency() }
+	fn capture_latency(&self) -> u32 { self.lock().unwrap().capture_latency() }
 }
 
 #[derive(Debug)]
@@ -175,7 +198,6 @@ impl AudioDeviceTrait for Arc<Mutex<DummyAudioDevice>> {
 	fn playback_latency(&self) -> u32 { self.lock().unwrap().playback_latency() }
 	fn capture_latency(&self) -> u32 { self.lock().unwrap().capture_latency() }
 	fn playback_and_capture_buffers<'a>(&'a mut self, scope: &'a DummyScope) -> Self::MutSliceIter<'a> {
-		use crate::owning_iter::OwningIterator;
 		Box::new(
 			OwningIterator::new(
 				self.lock().unwrap(),
@@ -184,7 +206,6 @@ impl AudioDeviceTrait for Arc<Mutex<DummyAudioDevice>> {
 		)
 	}
 	fn record_buffers<'a>(&'a self, scope: &'a DummyScope) -> Self::SliceIter<'a> {
-		use crate::owning_iter::OwningIterator;
 		Box::new(
 			OwningIterator::new(
 				self.lock().unwrap(),
