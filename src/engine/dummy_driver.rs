@@ -236,14 +236,19 @@ impl AudioDeviceTrait for Arc<Mutex<DummyAudioDevice>> {
 	}
 }
 
-pub struct DummyDriver {
-	playback_latency: u32,
-	capture_latency: u32,
-	sample_rate: u32,
+pub struct DummyDriverData {
+	pub playback_latency: u32,
+	pub capture_latency: u32,
+	pub sample_rate: u32,
 
-	audio_devices: std::collections::HashMap<String, Arc<Mutex<DummyAudioDevice>> >,
-	midi_devices: std::collections::HashMap<String, Arc<Mutex<DummyMidiDevice>> >,
+	pub audio_devices: std::collections::HashMap<String, Arc<Mutex<DummyAudioDevice>> >,
+	pub midi_devices: std::collections::HashMap<String, Arc<Mutex<DummyMidiDevice>> >,
+
+	backend: Option<super::backend::AudioThreadState<DummyDriver>>,
+	scope: DummyScope
 }
+
+pub struct DummyDriver(pub Arc<Mutex<DummyDriverData>>);
 
 impl DriverTrait for DummyDriver {
 	type MidiDev = Arc<Mutex<DummyMidiDevice>>;
@@ -251,32 +256,54 @@ impl DriverTrait for DummyDriver {
 	type ProcessScope = DummyScope;
 	type Error = ();
 
-	fn activate(&mut self, _: super::backend::AudioThreadState<Self>) { }
+	fn activate(&mut self, backend: super::backend::AudioThreadState<Self>) {
+		self.0.lock().unwrap().backend = Some(backend);
+	}
 
 	fn new_audio_device(&mut self, n_channels: u32, name: &str) -> Result<Self::AudioDev, Self::Error> {
-		let arc = Arc::new(Mutex::new(DummyAudioDevice::new(n_channels as usize, self.playback_latency, self.capture_latency)));
-		self.audio_devices.insert(name.into(), arc.clone());
+		println!("new audio device '{}' ({} channels)", name, n_channels);
+		let mut lock = self.0.lock().unwrap();
+		let arc = Arc::new(Mutex::new(DummyAudioDevice::new(n_channels as usize, lock.playback_latency, lock.capture_latency)));
+		lock.audio_devices.insert(name.into(), arc.clone());
 		return Ok(arc);
 	}
 	fn new_midi_device(&mut self, name: &str) -> Result<Self::MidiDev, Self::Error> {
-		let arc = Arc::new(Mutex::new(DummyMidiDevice::new(self.playback_latency, self.capture_latency)));
-		self.midi_devices.insert(name.into(), arc.clone());
+		let mut lock = self.0.lock().unwrap();
+		let arc = Arc::new(Mutex::new(DummyMidiDevice::new(lock.playback_latency, lock.capture_latency)));
+		lock.midi_devices.insert(name.into(), arc.clone());
 		return Ok(arc);
 	}
 
 	fn sample_rate(&self) -> u32 {
-		self.sample_rate
+		self.0.lock().unwrap().sample_rate
 	}
 }
 
 impl DummyDriver {
 	pub fn new(playback_latency: u32, capture_latency: u32, sample_rate: u32) -> DummyDriver {
-		DummyDriver {
+		DummyDriver(Arc::new(Mutex::new(DummyDriverData {
 			playback_latency,
 			capture_latency,
 			sample_rate,
 			audio_devices: std::collections::HashMap::new(),
 			midi_devices: std::collections::HashMap::new(),
-		}
+			backend: None,
+			scope: DummyScope::new()
+		})))
+	}
+
+	pub fn process(&self, n_frames: u32) {
+		let mut inner = self.0.lock().unwrap();
+		inner.scope.next(n_frames);
+		let scope = inner.scope.clone();
+		inner.backend.as_mut().unwrap().process_callback(&scope);
+	}
+
+	pub fn lock<'a>(&'a self) -> impl std::ops::DerefMut<Target = DummyDriverData> + 'a {
+		self.0.lock().unwrap()
+	}
+
+	pub fn clone(&self) -> DummyDriver {
+		DummyDriver(self.0.clone())
 	}
 }

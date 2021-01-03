@@ -79,3 +79,59 @@ pub fn launch<Driver: DriverTrait>(driver: Driver, loop_length_msec: u32) -> (Fr
 	return (frontend_thread_state, event_queue);
 }
 
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use tokio;
+
+
+	#[tokio::test]
+	async fn special_devices_are_created() {
+		let driver = dummy_driver::DummyDriver::new(0,0, 48000);
+		let (mut frontend, _events) = launch(driver.clone(), 1000);
+
+		let guard = driver.lock();
+		assert!(guard.audio_devices.len() == 1);
+		assert!(guard.midi_devices.len() == 1);
+		assert!(guard.audio_devices.contains_key("metronome"));
+		assert!(guard.midi_devices.contains_key("clock"));
+	}
+
+	#[tokio::test]
+	async fn device_creation() {
+		let driver = dummy_driver::DummyDriver::new(0,0, 48000);
+		let (mut frontend, _events) = launch(driver.clone(), 1000);
+
+		let aid = frontend.add_device("My Audio Device", 3).expect("Adding audio device failed");
+		let mid = frontend.add_mididevice("My Midi Device").expect("Adding midi device failed");
+
+		assert!(frontend.devices().len() == 1);
+		assert!(frontend.devices().get(&aid).expect("could not find device").info().n_channels == 3);
+		assert!(frontend.mididevices.contains_key(&mid));
+
+		let guard = driver.lock();
+		assert!(guard.audio_devices.len() == 2);
+		assert!(guard.midi_devices.len() == 2);
+		assert!(guard.audio_devices.contains_key("My Audio Device"));
+		assert!(guard.midi_devices.contains_key("My Midi Device"));
+		assert!(guard.audio_devices.get("My Audio Device").unwrap().record_buffers(&dummy_driver::DummyScope::new()).count() == 3);
+	}
+
+	#[tokio::test]
+	async fn creating_too_many_devices_fails_gracefully() {
+		let driver = dummy_driver::DummyDriver::new(0,0, 48000);
+		let (mut frontend, mut events) = launch(driver.clone(), 1000);
+
+		for i in 0..32 {
+			frontend.add_device(&format!("audio{}",i), 2).expect("Adding audio device failed");
+			driver.process(32);
+		}
+		frontend.add_device("audioX", 2).expect_err("Adding audio device should have failed");
+		
+		for i in 0..32 {
+			frontend.add_mididevice(&format!("midi{}",i)).expect("Adding midi device failed");
+			driver.process(32);
+		}
+		frontend.add_mididevice("midiX").expect_err("Adding midi device should have failed");
+	}
+}

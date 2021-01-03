@@ -2,8 +2,8 @@
 # It is not intended for manual editing.
 [[package]]
 name = "assert_no_alloc"
-version = "1.0.0"
-source = "git+https://github.com/Windfisch/rust-assert-no-alloc#954aecc0ca38ad078fd494675ec41683b787093f"
+version = "1.1.0"
+source = "git+https://github.com/Windfisch/rust-assert-no-alloc#deacecf3cd398f8dbca67c49a0714c89ac96708f"
 
 [[package]]
 name = "async-channel"
