@@ -13,20 +13,23 @@ pub struct DummyMidiDevice {
 	pub committed: Vec<MidiMessage>,
 	pub registry: MidiNoteRegistry,
 	pub incoming_events: Vec<DummyMidiEvent>,
-	latency: u32
+	playback_latency: u32,
+	capture_latency: u32
 }
 impl DummyMidiDevice {
-	pub fn new(latency: u32) -> DummyMidiDevice { // FIXME add playback and capture latency here!
+	pub fn new(playback_latency: u32, capture_latency: u32) -> DummyMidiDevice {
 		DummyMidiDevice {
 			queue: vec![],
 			committed: vec![],
-			latency,
+			playback_latency,
+			capture_latency,
 			registry: MidiNoteRegistry::new(),
 			incoming_events: Vec::new()
 		}
 	}
 }
 
+#[derive(Clone)]
 pub struct DummyScope {
 	pub n_frames: u32,
 	pub time: u32,
@@ -105,9 +108,11 @@ impl MidiDeviceTrait for DummyMidiDevice {
 	}
 	fn info(&self) -> MidiDeviceInfo { unimplemented!(); }
 	fn playback_latency(&self) -> u32 {
-		self.latency
+		self.playback_latency
 	}
-	fn capture_latency(&self) -> u32 { unimplemented!(); }
+	fn capture_latency(&self) -> u32 {
+		self.capture_latency
+	}
 }
 
 impl MidiDeviceTrait for Arc<Mutex<DummyMidiDevice>> {
@@ -238,7 +243,7 @@ impl DriverTrait for DummyDriver {
 		return Ok(arc);
 	}
 	fn new_midi_device(&mut self, name: &str) -> Result<Self::MidiDev, Self::Error> {
-		let arc = Arc::new(Mutex::new(DummyMidiDevice::new(self.playback_latency)));
+		let arc = Arc::new(Mutex::new(DummyMidiDevice::new(self.playback_latency, self.capture_latency)));
 		self.midi_devices.insert(name.into(), arc.clone());
 		return Ok(arc);
 	}

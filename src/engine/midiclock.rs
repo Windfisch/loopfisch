@@ -62,7 +62,7 @@ mod tests {
 			for n_beats in 4..9 {
 				let song_length = sample_rate * n_beats *60/bpm;
 				
-				let device = DummyMidiDevice::new(0);
+				let device = DummyMidiDevice::new(0, 0);
 				let mut clock = MidiClock::new(device) ;
 				let mut scope = DummyScope::new();
 				scope.next(4 * song_length);
@@ -79,7 +79,7 @@ mod tests {
 			let n_beats = 8;
 			let song_length = sample_rate * n_beats *60/bpm;
 			
-			let device = DummyMidiDevice::new(0);
+			let device = DummyMidiDevice::new(0, 0);
 			let mut clock = MidiClock::new(device) ;
 			let mut scope = DummyScope::new();
 
@@ -97,7 +97,7 @@ mod tests {
 				let song_length = sample_rate * n_beats *60/bpm;
 
 				for latency in [0, 1, 32, 51, 256, 4096].iter() {
-					let device = DummyMidiDevice::new(*latency);
+					let device = DummyMidiDevice::new(*latency, *latency);
 					let mut clock = MidiClock::new(device) ;
 					let mut scope = DummyScope::new();
 					scope.next(10*song_length);
@@ -115,7 +115,7 @@ mod tests {
 			for n_beats in 4..9 {
 				let song_length = sample_rate * n_beats *60/bpm;
 				
-				let device = DummyMidiDevice::new(0);
+				let device = DummyMidiDevice::new(0, 0);
 				let mut clock = MidiClock::new(device) ;
 				let mut scope = DummyScope::new();
 				scope.next(song_length + 1);
@@ -132,7 +132,7 @@ mod tests {
 		for bpm in [113, 116, 127].iter() {
 			let song_length = sample_rate * n_beats *60/bpm;
 			for chunksize in [1, 32, 51, 127, 128, 1024, 4096, 4*song_length].iter() {
-				let device = DummyMidiDevice::new(128);
+				let device = DummyMidiDevice::new(128, 128);
 				let mut clock = MidiClock::new(device) ;
 				let mut scope = DummyScope::new();
 				for _ in 0..(4*song_length/chunksize) {
@@ -154,7 +154,7 @@ mod tests {
 			let song_length = sample_rate * n_beats *60/bpm;
 
 			let reference = {
-				let device = DummyMidiDevice::new(128);
+				let device = DummyMidiDevice::new(128, 128);
 				let mut clock = MidiClock::new(device) ;
 				let mut scope = DummyScope::new();
 				scope.next(4*song_length);
@@ -163,7 +163,7 @@ mod tests {
 			};
 
 			for chunksize in [1, 32, 51, 127, 128, 1024, 4096].iter() {
-				let device = DummyMidiDevice::new(128);
+				let device = DummyMidiDevice::new(128, 128);
 				let mut clock = MidiClock::new(device) ;
 				let mut scope = DummyScope::new();
 				for _ in 0..(4*song_length/chunksize) {
@@ -186,7 +186,7 @@ mod tests {
 				let song_length = sample_rate * n_beats *60/bpm;
 
 				for latency in [0, 1, 32, 51, 256, 4096].iter() {
-					let device = DummyMidiDevice::new(*latency);
+					let device = DummyMidiDevice::new(*latency, *latency);
 					let mut clock = MidiClock::new(device) ;
 					let mut scope = DummyScope::new();
 					scope.next(2*song_length);
