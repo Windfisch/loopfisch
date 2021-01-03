@@ -102,11 +102,22 @@ impl MidiDeviceTrait for DummyMidiDevice {
 		self.queue.push(msg);
 		Ok(())
 	}
-	fn update_registry(&mut self, _scope: &Self::Scope) { unimplemented!(); }
+	fn update_registry(&mut self, _scope: &Self::Scope) { 
+		// FIXME duplicate code, same as in jack_driver.rs.
+		// This method should not be part of the DriverTrait API,
+		// instead it should be a detail of the backend.
+		if self.incoming_events.len() > 0 {
+			unimplemented!();
+		}
+	}
 	fn clone_registry(&self) -> super::midi_registry::MidiNoteRegistry {
 		self.registry.clone()
 	}
-	fn info(&self) -> MidiDeviceInfo { unimplemented!(); }
+	fn info(&self) -> MidiDeviceInfo {
+		MidiDeviceInfo {
+			name: "??".into()
+		}
+	}
 	fn playback_latency(&self) -> u32 {
 		self.playback_latency
 	}
@@ -178,7 +189,12 @@ impl AudioDeviceTrait for DummyAudioDevice {
 	type MutSliceIter<'a> = PlaybackCaptureIter<'a>;
 	type SliceIter<'a> = CaptureIter<'a>;
 
-	fn info(&self) -> AudioDeviceInfo { unimplemented!(); }
+	fn info(&self) -> AudioDeviceInfo {
+		AudioDeviceInfo {
+			name: "??".into(),
+			n_channels: self.playback_buffers.len()
+		}
+	}
 	fn playback_latency(&self) -> u32 { self.playback_latency }
 	fn capture_latency(&self) -> u32 { self.capture_latency }
 	fn playback_and_capture_buffers(&mut self, scope: &DummyScope) -> PlaybackCaptureIter {
