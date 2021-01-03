@@ -6,7 +6,7 @@ use async_std::sync::Mutex;
 use crate::engine::*;
 
 pub struct GuiMutexedState {
-	pub engine: FrontendThreadState,
+	pub engine: Box<dyn FrontendTrait>,
 	pub synths: Vec<Synth>,
 	pub take_id: IdGenerator,
 	pub chain_id: IdGenerator,

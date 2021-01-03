@@ -6,6 +6,13 @@ pub struct MidiNoteRegistry {
 	playing_notes: [[u8; 128]; 16]
 }
 
+impl std::fmt::Debug for MidiNoteRegistry {
+	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+		let notes: Vec<_> = self.active_notes().collect();
+		notes.fmt(f)
+	}
+}
+
 
 impl MidiNoteRegistry {
 	pub fn new() -> MidiNoteRegistry {
@@ -86,13 +93,13 @@ mod tests {
 	#[test]
 	pub fn new_registry_has_no_notes() {
 		let mut reg = MidiNoteRegistry::new();
-		let mut dev = DummyMidiDevice::new(0);
+		let mut dev = DummyMidiDevice::new(0, 0);
 		assert!(reg.active_notes().count() == 0);
 
 		reg.send_noteons(&mut dev);
 		assert!(dev.committed.len() == 0);
 
-		dev = DummyMidiDevice::new(0);
+		dev = DummyMidiDevice::new(0, 0);
 		reg.send_noteoffs(&mut dev);
 		assert!(dev.committed.len() == 0);
 	}
@@ -115,15 +122,15 @@ mod tests {
 		let mut scope = DummyScope::new();
 		scope.next(1024);
 
-		let mut note_ons = DummyMidiDevice::new(0);
+		let mut note_ons = DummyMidiDevice::new(0, 0);
 		reg.send_noteons(&mut note_ons);
 		note_ons.commit_out_buffer(&scope);
 
-		let mut note_offs = DummyMidiDevice::new(0);
+		let mut note_offs = DummyMidiDevice::new(0, 0);
 		reg.send_noteoffs(&mut note_offs);
 		note_offs.commit_out_buffer(&scope);
 
-		let mut note_offs_timestamped = DummyMidiDevice::new(0);
+		let mut note_offs_timestamped = DummyMidiDevice::new(0, 0);
 		reg.send_noteoffs_at(&mut note_offs_timestamped, 42);
 		note_offs_timestamped.commit_out_buffer(&scope);
 

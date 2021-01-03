@@ -14,7 +14,7 @@ use updates::*;
 use gui_state::*;
 
 
-use crate::engine::{Event, FrontendThreadState};
+use crate::engine::{Event, FrontendTrait};
 use async_std::sync::Mutex;
 use std::sync::Arc;
 use crate::id_generator::IdGenerator;
@@ -50,7 +50,7 @@ fn not_found(req: &rocket::Request) -> String {
 	}
 }
 
-pub async fn launch_server(engine: FrontendThreadState, event_channel_: realtime_send_queue::Consumer<Event>) {
+pub async fn launch_server(engine: Box<dyn FrontendTrait>, event_channel_: realtime_send_queue::Consumer<Event>) {
 	let sample_rate = engine.sample_rate();
 	let update_list = Arc::new(UpdateList::new());
 	let state = Arc::new( GuiState {

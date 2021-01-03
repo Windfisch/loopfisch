@@ -1,9 +1,7 @@
-use super::jack_driver::*;
 use super::takes::{AudioTakeNode,MidiTakeNode};
 
-
 #[derive(Debug)]
-pub enum Message {
+pub enum Message<AudioDevice, MidiDevice> {
 	SetSongLength(u32, u32),
 	UpdateAudioDevice(usize, Option<AudioDevice>),
 	UpdateMidiDevice(usize, Option<MidiDevice>),
@@ -18,7 +16,7 @@ pub enum Message {
 	DeleteTake(u32)
 }
 
-pub enum DestructionRequest {
+pub enum DestructionRequest<AudioDevice, MidiDevice> {
 	AudioDevice(AudioDevice),
 	MidiDevice(MidiDevice),
 	End

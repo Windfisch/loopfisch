@@ -2,8 +2,8 @@
 # It is not intended for manual editing.
 [[package]]
 name = "assert_no_alloc"
-version = "1.0.0"
-source = "git+https://github.com/Windfisch/rust-assert-no-alloc#954aecc0ca38ad078fd494675ec41683b787093f"
+version = "1.1.0"
+source = "git+https://github.com/Windfisch/rust-assert-no-alloc#deacecf3cd398f8dbca67c49a0714c89ac96708f"
 
 [[package]]
 name = "async-channel"
@@ -762,6 +762,7 @@ dependencies = [
  "serde",
  "serde_json",
  "smallvec",
+ "stable_deref_trait",
  "tokio",
  "tokio-fd",
 ]
@@ -1333,6 +1334,12 @@ dependencies = [
  "libc",
  "winapi 0.3.9",
 ]
+
+[[package]]
+name = "stable_deref_trait"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
 name = "standback"

@@ -7,7 +7,6 @@ use super::messages::*;
 use core::cmp::min;
 use intrusive_collections::LinkedList;
 use std::sync::Arc;
-use super::jack_driver::*;
 use super::driver_traits::*;
 
 use super::metronome::AudioMetronome;
@@ -74,14 +73,16 @@ impl MidiDeviceSettings {
 	}
 }
 
-pub struct AudioThreadState {
-	devices: Vec<Option<(AudioDevice, AudioDeviceSettings)>>,
-	mididevices: Vec<Option<(MidiDevice, MidiDeviceSettings)>>,
-	metronome: AudioMetronome<AudioDevice>,
-	midiclock: MidiClock<MidiDevice>,
+pub struct AudioThreadState<Driver: DriverTrait>
+{
+	devices: Vec<Option<(Driver::AudioDev, AudioDeviceSettings)>>,
+	mididevices: Vec<Option<(Driver::MidiDev, MidiDeviceSettings)>>,
+	metronome: AudioMetronome<Driver::AudioDev>,
+	midiclock: MidiClock<Driver::MidiDev>,
 	audiotakes: LinkedList<AudioTakeAdapter>,
 	miditakes: LinkedList<MidiTakeAdapter>,
-	command_channel: ringbuf::Consumer<Message>,
+	command_channel: ringbuf::Consumer<Message<Driver::AudioDev, Driver::MidiDev>>,
+	sample_rate: u32,
 	transport_position: u32, // does not wrap 
 	song_position: u32, // wraps
 	song_length: u32,
@@ -89,10 +90,11 @@ pub struct AudioThreadState {
 	shared: Arc<SharedThreadState>,
 	event_channel: realtime_send_queue::Producer<Event>,
 	destructor_thread_handle: std::thread::JoinHandle<()>,
-	destructor_channel: ringbuf::Producer<DestructionRequest>
+	destructor_channel: ringbuf::Producer<DestructionRequest<Driver::AudioDev, Driver::MidiDev>>
 }
 
-impl Drop for AudioThreadState {
+impl<Driver: DriverTrait> Drop for AudioThreadState<Driver>
+{
 	fn drop(&mut self) {
 		println!("\n\n\n############# Dropping AudioThreadState\n\n\n");
 		self.event_channel.send(Event::Kill).ok();
@@ -100,11 +102,12 @@ impl Drop for AudioThreadState {
 	}
 }
 
-impl AudioThreadState {
+impl<Driver: DriverTrait> AudioThreadState<Driver>
+{
 	// FIXME this function signature sucks
-	pub fn new(audiodevices: Vec<AudioDevice>, mididevices: Vec<MidiDevice>, metronome: AudioMetronome<AudioDevice>, midiclock: MidiClock<MidiDevice>, command_channel: ringbuf::Consumer<Message>, song_length: u32, shared: Arc<SharedThreadState>, event_channel: realtime_send_queue::Producer<Event>) -> AudioThreadState
+	pub fn new(sample_rate: u32, audiodevices: Vec<Driver::AudioDev>, mididevices: Vec<Driver::MidiDev>, metronome: AudioMetronome<Driver::AudioDev>, midiclock: MidiClock<Driver::MidiDev>, command_channel: ringbuf::Consumer<Message<Driver::AudioDev, Driver::MidiDev>>, song_length: u32, shared: Arc<SharedThreadState>, event_channel: realtime_send_queue::Producer<Event>) -> AudioThreadState<Driver>
 	{
-		let (destruction_sender, mut destruction_receiver) = ringbuf::RingBuffer::<DestructionRequest>::new(32).split();
+		let (destruction_sender, mut destruction_receiver) = ringbuf::RingBuffer::new(32).split();
 		let destructor_thread_handle = std::thread::spawn(move || {
 			loop {
 				std::thread::park();
@@ -127,6 +130,7 @@ impl AudioThreadState {
 			audiotakes: LinkedList::new(AudioTakeAdapter::new()),
 			miditakes: LinkedList::new(MidiTakeAdapter::new()),
 			command_channel,
+			sample_rate,
 			transport_position: 0,
 			song_position: 0,
 			song_length,
@@ -138,11 +142,11 @@ impl AudioThreadState {
 		}
 	}
 
-	pub fn process_callback(&mut self, client: &jack::Client, scope: &jack::ProcessScope) -> jack::Control {
+	pub fn process_callback(&mut self, scope: &Driver::ProcessScope) {
 		assert_no_alloc(||{
 			assert!(scope.n_frames() < self.song_length);
 
-			self.metronome.process(self.song_position, self.song_length, self.n_beats, client.sample_rate() as u32, scope);
+			self.metronome.process(self.song_position, self.song_length, self.n_beats, self.sample_rate, scope);
 			self.midiclock.process(self.song_position, self.song_length, self.n_beats, scope);
 
 			self.process_command_channel();
@@ -167,8 +171,6 @@ impl AudioThreadState {
 			self.shared.song_position.store(self.song_position, std::sync::atomic::Ordering::Relaxed);
 			self.shared.transport_position.store(self.transport_position, std::sync::atomic::Ordering::Relaxed);
 		});
-
-		jack::Control::Continue
 	}
 
 	fn process_command_channel(&mut self) {
@@ -272,7 +274,7 @@ impl AudioThreadState {
 		}
 	}
 
-	fn process_audio_playback(&mut self, scope: &jack::ProcessScope) {
+	fn process_audio_playback(&mut self, scope: &Driver::ProcessScope) {
 		for dev in self.devices.iter_mut() {
 			if let Some(d) = dev {
 				if d.1.echo {
@@ -293,7 +295,7 @@ impl AudioThreadState {
 		}
 	}
 
-	fn process_midi_playback(&mut self, scope: &jack::ProcessScope) {
+	fn process_midi_playback(&mut self, scope: &Driver::ProcessScope) {
 		let mut cursor = self.miditakes.front();
 		while let Some(node) = cursor.get() {
 			let mut t = node.take.borrow_mut();
@@ -328,8 +330,7 @@ impl AudioThreadState {
 		}
 	}
 
-
-	fn process_audio_recording(&mut self, scope: &jack::ProcessScope) {
+	fn process_audio_recording(&mut self, scope: &Driver::ProcessScope) {
 		use RecordState::*;
 		let mut cursor = self.audiotakes.front();
 		while let Some(node) = cursor.get() {
@@ -367,7 +368,7 @@ impl AudioThreadState {
 		}
 	}
 
-	fn process_midi_recording(&mut self, scope: &jack::ProcessScope) {
+	fn process_midi_recording(&mut self, scope: &Driver::ProcessScope) {
 		use RecordState::*;
 		let mut cursor = self.miditakes.front();
 		while let Some(node) = cursor.get() {

@@ -594,7 +594,7 @@ mod tests {
 	fn prepare2() -> (MidiTake, DummyScope, DummyMidiDevice) {
 		let mut t = MidiTake::new(0, 0, false);
 		let mut scope = DummyScope::new();
-		let mut dev = DummyMidiDevice::new(0);
+		let mut dev = DummyMidiDevice::new(0, 0);
 
 		dev.incoming_events = vec![
 			DummyMidiEvent { time:     0, data: vec![0x90, 50, 64] },
@@ -742,7 +742,7 @@ mod tests {
 	pub fn miditake_sends_noteon_for_already_held_notes_at_the_start() {
 		let mut t = MidiTake::new(0, 0, false);
 		let mut scope = DummyScope::new();
-		let mut dev = DummyMidiDevice::new(0);
+		let mut dev = DummyMidiDevice::new(0, 0);
 
 		dev.registry.register_event([0x90, 31, 64]);
 		dev.incoming_events = vec![
@@ -816,7 +816,7 @@ mod tests {
 	pub fn miditake_playback_and_capture_can_be_interleaved_as_long_the_end_is_never_hit() {
 		let mut t = MidiTake::new(0, 0, false);
 		let mut scope = DummyScope::new();
-		let mut dev = DummyMidiDevice::new(0);
+		let mut dev = DummyMidiDevice::new(0, 0);
 
 		dev.incoming_events = vec![
 			DummyMidiEvent { time:     0, data: vec![0x90, 50, 64] },

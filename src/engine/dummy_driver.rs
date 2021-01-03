@@ -2,28 +2,35 @@ use crate::midi_message::MidiMessage;
 use super::driver_traits::*;
 use super::midi_registry::MidiNoteRegistry;
 
+use std::sync::{Arc, Mutex};
 use std::slice::*;
 use std::iter::*;
+use crate::owning_iter::OwningIterator;
+use assert_no_alloc::{permit_alloc, PermitDrop};
 
+#[derive(Debug)]
 pub struct DummyMidiDevice {
 	queue: Vec<MidiMessage>,
 	pub committed: Vec<MidiMessage>,
 	pub registry: MidiNoteRegistry,
 	pub incoming_events: Vec<DummyMidiEvent>,
-	latency: u32
+	playback_latency: u32,
+	capture_latency: u32
 }
 impl DummyMidiDevice {
-	pub fn new(latency: u32) -> DummyMidiDevice {
+	pub fn new(playback_latency: u32, capture_latency: u32) -> DummyMidiDevice {
 		DummyMidiDevice {
 			queue: vec![],
 			committed: vec![],
-			latency,
+			playback_latency,
+			capture_latency,
 			registry: MidiNoteRegistry::new(),
 			incoming_events: Vec::new()
 		}
 	}
 }
 
+#[derive(Clone)]
 pub struct DummyScope {
 	pub n_frames: u32,
 	pub time: u32,
@@ -68,61 +75,88 @@ impl TimestampedMidiEvent for DummyMidiEvent {
 
 impl MidiDeviceTrait for DummyMidiDevice {
 	type Event<'a> = DummyMidiEvent;
-	type EventIterator<'a> = Box<dyn Iterator<Item=DummyMidiEvent> + 'a>;
+	type EventIterator<'a> = PermitDrop<Box<dyn Iterator<Item=DummyMidiEvent> + 'a>>;
 	type Scope = DummyScope;
 
 	fn incoming_events(&'a self, scope: &'a Self::Scope) -> Self::EventIterator<'a> {
 		let range = scope.time .. scope.time+scope.n_frames;
 		let time0 = scope.time;
-		Box::new(
-			self.incoming_events
-				.iter()
-				.filter(move |ev| range.contains(&ev.time))
-				.map(move |ev| DummyMidiEvent { time: ev.time - time0, data: ev.data.clone() })
-		)
+
+		PermitDrop::new( permit_alloc(||
+			Box::new(
+				self.incoming_events
+					.iter()
+					.filter(move |ev| range.contains(&ev.time))
+					.map(move |ev| DummyMidiEvent { time: ev.time - time0, data: ev.data.clone() })
+			)
+		))
 	}
 	fn commit_out_buffer(&mut self, scope: &Self::Scope) {
-		for message in self.queue.iter() {
-			assert!(message.timestamp < scope.n_frames);
-			self.committed.push(MidiMessage {
-				timestamp: message.timestamp + scope.time,
-				data: message.data,
-				datalen: message.datalen
-			});
-		}
-		self.queue = vec![];
+		permit_alloc(|| {
+			for message in self.queue.iter() {
+				assert!(message.timestamp < scope.n_frames);
+				self.committed.push(MidiMessage {
+					timestamp: message.timestamp + scope.time,
+					data: message.data,
+					datalen: message.datalen
+				});
+			}
+			self.queue = vec![];
+		})
 	}
 	fn queue_event(&mut self, msg: MidiMessage) -> Result<(), ()> {
-		self.queue.push(msg);
+		permit_alloc(|| {
+			self.queue.push(msg);
+		});
 		Ok(())
 	}
-	fn update_registry(&mut self, scope: &Self::Scope) { unimplemented!(); }
+	fn update_registry(&mut self, _scope: &Self::Scope) { 
+		// FIXME duplicate code, same as in jack_driver.rs.
+		// This method should not be part of the DriverTrait API,
+		// instead it should be a detail of the backend.
+		if self.incoming_events.len() > 0 {
+			unimplemented!();
+		}
+	}
 	fn clone_registry(&self) -> super::midi_registry::MidiNoteRegistry {
 		self.registry.clone()
 	}
-	fn info(&self) -> MidiDeviceInfo { unimplemented!(); }
-	fn playback_latency(&self) -> u32 {
-		self.latency
+	fn info(&self) -> MidiDeviceInfo {
+		MidiDeviceInfo {
+			name: "??".into()
+		}
 	}
-	fn capture_latency(&self) -> u32 { unimplemented!(); }
+	fn playback_latency(&self) -> u32 {
+		self.playback_latency
+	}
+	fn capture_latency(&self) -> u32 {
+		self.capture_latency
+	}
 }
 
-impl MidiDeviceTrait for &mut DummyMidiDevice {
+impl MidiDeviceTrait for Arc<Mutex<DummyMidiDevice>> {
 	type Event<'a> = DummyMidiEvent;
-	type EventIterator<'a> = Box<dyn Iterator<Item=DummyMidiEvent> + 'a>;
+	type EventIterator<'a> = PermitDrop<Box<dyn Iterator<Item=DummyMidiEvent> + 'a>>;
 	type Scope = DummyScope;
 
-	fn incoming_events(&'a self, scope: &'a Self::Scope) -> Self::EventIterator<'a> { (**self).incoming_events(scope) }
-	fn commit_out_buffer(&mut self, scope: &Self::Scope) { (**self).commit_out_buffer(scope) }
-	fn queue_event(&mut self, msg: MidiMessage) -> Result<(), ()> { (**self).queue_event(msg) }
-	fn update_registry(&mut self, scope: &Self::Scope) { (**self).update_registry(scope) }
-	fn clone_registry(&self) -> super::midi_registry::MidiNoteRegistry { (**self).clone_registry() }
-	fn info(&self) -> MidiDeviceInfo { (**self).info() }
-	fn playback_latency(&self) -> u32 { (**self).playback_latency() }
-	fn capture_latency(&self) -> u32 { (**self).capture_latency() }
+	fn incoming_events(&'a self, scope: &'a Self::Scope) -> Self::EventIterator<'a> {
+		PermitDrop::new( permit_alloc(|| Box::new(
+			OwningIterator::new(
+				self.lock().unwrap(),
+				|v| unsafe {(*v).incoming_events(scope)}
+			)
+		)))
+	}
+	fn commit_out_buffer(&mut self, scope: &Self::Scope) { self.lock().unwrap().commit_out_buffer(scope) }
+	fn queue_event(&mut self, msg: MidiMessage) -> Result<(), ()> { self.lock().unwrap().queue_event(msg) }
+	fn update_registry(&mut self, scope: &Self::Scope) { self.lock().unwrap().update_registry(scope) }
+	fn clone_registry(&self) -> super::midi_registry::MidiNoteRegistry { self.lock().unwrap().clone_registry() }
+	fn info(&self) -> MidiDeviceInfo { self.lock().unwrap().info() }
+	fn playback_latency(&self) -> u32 { self.lock().unwrap().playback_latency() }
+	fn capture_latency(&self) -> u32 { self.lock().unwrap().capture_latency() }
 }
 
-
+#[derive(Debug)]
 pub struct DummyAudioDevice {
 	pub playback_latency: u32,
 	pub capture_latency: u32,
@@ -163,18 +197,127 @@ impl AudioDeviceTrait for DummyAudioDevice {
 	type MutSliceIter<'a> = PlaybackCaptureIter<'a>;
 	type SliceIter<'a> = CaptureIter<'a>;
 
-	fn info(&self) -> AudioDeviceInfo { unimplemented!(); }
+	fn info(&self) -> AudioDeviceInfo {
+		AudioDeviceInfo {
+			name: "??".into(),
+			n_channels: self.playback_buffers.len()
+		}
+	}
 	fn playback_latency(&self) -> u32 { self.playback_latency }
 	fn capture_latency(&self) -> u32 { self.capture_latency }
 	fn playback_and_capture_buffers(&mut self, scope: &DummyScope) -> PlaybackCaptureIter {
-		for vec in self.playback_buffers.iter_mut().chain( self.capture_buffers.iter_mut() ) {
-			if vec.len() < (scope.time + scope.n_frames) as usize {
-				vec.resize((scope.time + scope.n_frames) as usize, 0.0);
+		permit_alloc(|| {
+			for vec in self.playback_buffers.iter_mut().chain( self.capture_buffers.iter_mut() ) {
+				if vec.len() < (scope.time + scope.n_frames) as usize {
+					vec.resize((scope.time + scope.n_frames) as usize, 0.0);
+				}
 			}
-		}
+		});
 		PlaybackCaptureIter(self.playback_buffers.iter_mut().zip(self.capture_buffers.iter()), scope.time as usize)
 	}
 	fn record_buffers(&self, scope: &DummyScope) -> CaptureIter {
 		CaptureIter(self.capture_buffers.iter(), scope.time as usize)
+	}
+}
+
+impl AudioDeviceTrait for Arc<Mutex<DummyAudioDevice>> {
+	type Scope = <DummyAudioDevice as AudioDeviceTrait>::Scope;
+	type MutSliceIter<'a> = PermitDrop<Box<dyn Iterator<Item = (&'a mut[f32], &'a [f32])> + 'a>>;
+	type SliceIter<'a> = PermitDrop<Box<dyn Iterator<Item = &'a [f32]> + 'a>>;
+
+	fn info(&self) -> AudioDeviceInfo { self.lock().unwrap().info() }
+	fn playback_latency(&self) -> u32 { self.lock().unwrap().playback_latency() }
+	fn capture_latency(&self) -> u32 { self.lock().unwrap().capture_latency() }
+	fn playback_and_capture_buffers<'a>(&'a mut self, scope: &'a DummyScope) -> Self::MutSliceIter<'a> {
+		PermitDrop::new(
+			permit_alloc(move || Box::new(
+				OwningIterator::new(
+					self.lock().unwrap(),
+					|v| unsafe { (*v).playback_and_capture_buffers(&scope) }
+				)
+			))
+		)
+	}
+	fn record_buffers<'a>(&'a self, scope: &'a DummyScope) -> Self::SliceIter<'a> {
+		PermitDrop::new(
+			permit_alloc(move || Box::new(
+				OwningIterator::new(
+					self.lock().unwrap(),
+					|v| unsafe { (*v).record_buffers(&scope) }
+				)
+			)
+		))
+	}
+}
+
+pub struct DummyDriverData {
+	pub playback_latency: u32,
+	pub capture_latency: u32,
+	pub sample_rate: u32,
+
+	pub audio_devices: std::collections::HashMap<String, Arc<Mutex<DummyAudioDevice>> >,
+	pub midi_devices: std::collections::HashMap<String, Arc<Mutex<DummyMidiDevice>> >,
+
+	backend: Option<super::backend::AudioThreadState<DummyDriver>>,
+	scope: DummyScope
+}
+
+pub struct DummyDriver(pub Arc<Mutex<DummyDriverData>>);
+
+impl DriverTrait for DummyDriver {
+	type MidiDev = Arc<Mutex<DummyMidiDevice>>;
+	type AudioDev = Arc<Mutex<DummyAudioDevice>>;
+	type ProcessScope = DummyScope;
+	type Error = ();
+
+	fn activate(&mut self, backend: super::backend::AudioThreadState<Self>) {
+		self.0.lock().unwrap().backend = Some(backend);
+	}
+
+	fn new_audio_device(&mut self, n_channels: u32, name: &str) -> Result<Self::AudioDev, Self::Error> {
+		println!("new audio device '{}' ({} channels)", name, n_channels);
+		let mut lock = self.0.lock().unwrap();
+		let arc = Arc::new(Mutex::new(DummyAudioDevice::new(n_channels as usize, lock.playback_latency, lock.capture_latency)));
+		lock.audio_devices.insert(name.into(), arc.clone());
+		return Ok(arc);
+	}
+	fn new_midi_device(&mut self, name: &str) -> Result<Self::MidiDev, Self::Error> {
+		let mut lock = self.0.lock().unwrap();
+		let arc = Arc::new(Mutex::new(DummyMidiDevice::new(lock.playback_latency, lock.capture_latency)));
+		lock.midi_devices.insert(name.into(), arc.clone());
+		return Ok(arc);
+	}
+
+	fn sample_rate(&self) -> u32 {
+		self.0.lock().unwrap().sample_rate
+	}
+}
+
+impl DummyDriver {
+	pub fn new(playback_latency: u32, capture_latency: u32, sample_rate: u32) -> DummyDriver {
+		DummyDriver(Arc::new(Mutex::new(DummyDriverData {
+			playback_latency,
+			capture_latency,
+			sample_rate,
+			audio_devices: std::collections::HashMap::new(),
+			midi_devices: std::collections::HashMap::new(),
+			backend: None,
+			scope: DummyScope::new()
+		})))
+	}
+
+	pub fn process(&self, n_frames: u32) {
+		let mut inner = self.0.lock().unwrap();
+		inner.scope.next(n_frames);
+		let scope = inner.scope.clone();
+		inner.backend.as_mut().unwrap().process_callback(&scope);
+	}
+
+	pub fn lock<'a>(&'a self) -> impl std::ops::DerefMut<Target = DummyDriverData> + 'a {
+		self.0.lock().unwrap()
+	}
+
+	pub fn clone(&self) -> DummyDriver {
+		DummyDriver(self.0.clone())
 	}
 }

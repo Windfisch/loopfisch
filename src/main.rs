@@ -18,6 +18,9 @@
 #![feature(in_band_lifetimes)]
 #![feature(generic_associated_types)]
 
+#[cfg(test)]
+mod owning_iter;
+
 mod engine;
 mod midi_message;
 mod outsourced_allocation_buffer;
@@ -43,7 +46,7 @@ static A: assert_no_alloc::AllocDisabler = assert_no_alloc::AllocDisabler;
 async fn main() {
     println!("Hello, world!");
 
-	let (engine, event_queue) = engine::launch(6000);
-	rest_api::launch_server(engine, event_queue).await;
+	let (engine, event_queue) = engine::launch(engine::JackDriver::new(), 6000);
+	rest_api::launch_server(Box::new(engine), event_queue).await;
 	return;
 }
