@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::slice::*;
 use std::iter::*;
 use crate::owning_iter::OwningIterator;
+use assert_no_alloc::{permit_alloc, PermitDrop};
 
 #[derive(Debug)]
 pub struct DummyMidiDevice {
@@ -74,32 +75,39 @@ impl TimestampedMidiEvent for DummyMidiEvent {
 
 impl MidiDeviceTrait for DummyMidiDevice {
 	type Event<'a> = DummyMidiEvent;
-	type EventIterator<'a> = Box<dyn Iterator<Item=DummyMidiEvent> + 'a>;
+	type EventIterator<'a> = PermitDrop<Box<dyn Iterator<Item=DummyMidiEvent> + 'a>>;
 	type Scope = DummyScope;
 
 	fn incoming_events(&'a self, scope: &'a Self::Scope) -> Self::EventIterator<'a> {
 		let range = scope.time .. scope.time+scope.n_frames;
 		let time0 = scope.time;
-		Box::new(
-			self.incoming_events
-				.iter()
-				.filter(move |ev| range.contains(&ev.time))
-				.map(move |ev| DummyMidiEvent { time: ev.time - time0, data: ev.data.clone() })
-		)
+
+		PermitDrop::new( permit_alloc(||
+			Box::new(
+				self.incoming_events
+					.iter()
+					.filter(move |ev| range.contains(&ev.time))
+					.map(move |ev| DummyMidiEvent { time: ev.time - time0, data: ev.data.clone() })
+			)
+		))
 	}
 	fn commit_out_buffer(&mut self, scope: &Self::Scope) {
-		for message in self.queue.iter() {
-			assert!(message.timestamp < scope.n_frames);
-			self.committed.push(MidiMessage {
-				timestamp: message.timestamp + scope.time,
-				data: message.data,
-				datalen: message.datalen
-			});
-		}
-		self.queue = vec![];
+		permit_alloc(|| {
+			for message in self.queue.iter() {
+				assert!(message.timestamp < scope.n_frames);
+				self.committed.push(MidiMessage {
+					timestamp: message.timestamp + scope.time,
+					data: message.data,
+					datalen: message.datalen
+				});
+			}
+			self.queue = vec![];
+		})
 	}
 	fn queue_event(&mut self, msg: MidiMessage) -> Result<(), ()> {
-		self.queue.push(msg);
+		permit_alloc(|| {
+			self.queue.push(msg);
+		});
 		Ok(())
 	}
 	fn update_registry(&mut self, _scope: &Self::Scope) { 
@@ -128,16 +136,16 @@ impl MidiDeviceTrait for DummyMidiDevice {
 
 impl MidiDeviceTrait for Arc<Mutex<DummyMidiDevice>> {
 	type Event<'a> = DummyMidiEvent;
-	type EventIterator<'a> = Box<dyn Iterator<Item=DummyMidiEvent> + 'a>;
+	type EventIterator<'a> = PermitDrop<Box<dyn Iterator<Item=DummyMidiEvent> + 'a>>;
 	type Scope = DummyScope;
 
 	fn incoming_events(&'a self, scope: &'a Self::Scope) -> Self::EventIterator<'a> {
-		Box::new(
+		PermitDrop::new( permit_alloc(|| Box::new(
 			OwningIterator::new(
 				self.lock().unwrap(),
 				|v| unsafe {(*v).incoming_events(scope)}
 			)
-		)
+		)))
 	}
 	fn commit_out_buffer(&mut self, scope: &Self::Scope) { self.lock().unwrap().commit_out_buffer(scope) }
 	fn queue_event(&mut self, msg: MidiMessage) -> Result<(), ()> { self.lock().unwrap().queue_event(msg) }
@@ -198,11 +206,13 @@ impl AudioDeviceTrait for DummyAudioDevice {
 	fn playback_latency(&self) -> u32 { self.playback_latency }
 	fn capture_latency(&self) -> u32 { self.capture_latency }
 	fn playback_and_capture_buffers(&mut self, scope: &DummyScope) -> PlaybackCaptureIter {
-		for vec in self.playback_buffers.iter_mut().chain( self.capture_buffers.iter_mut() ) {
-			if vec.len() < (scope.time + scope.n_frames) as usize {
-				vec.resize((scope.time + scope.n_frames) as usize, 0.0);
+		permit_alloc(|| {
+			for vec in self.playback_buffers.iter_mut().chain( self.capture_buffers.iter_mut() ) {
+				if vec.len() < (scope.time + scope.n_frames) as usize {
+					vec.resize((scope.time + scope.n_frames) as usize, 0.0);
+				}
 			}
-		}
+		});
 		PlaybackCaptureIter(self.playback_buffers.iter_mut().zip(self.capture_buffers.iter()), scope.time as usize)
 	}
 	fn record_buffers(&self, scope: &DummyScope) -> CaptureIter {
@@ -212,27 +222,31 @@ impl AudioDeviceTrait for DummyAudioDevice {
 
 impl AudioDeviceTrait for Arc<Mutex<DummyAudioDevice>> {
 	type Scope = <DummyAudioDevice as AudioDeviceTrait>::Scope;
-	type MutSliceIter<'a> = Box<dyn Iterator<Item = (&'a mut[f32], &'a [f32])> + 'a>;
-	type SliceIter<'a> = Box<dyn Iterator<Item = &'a [f32]> + 'a>;
+	type MutSliceIter<'a> = PermitDrop<Box<dyn Iterator<Item = (&'a mut[f32], &'a [f32])> + 'a>>;
+	type SliceIter<'a> = PermitDrop<Box<dyn Iterator<Item = &'a [f32]> + 'a>>;
 
 	fn info(&self) -> AudioDeviceInfo { self.lock().unwrap().info() }
 	fn playback_latency(&self) -> u32 { self.lock().unwrap().playback_latency() }
 	fn capture_latency(&self) -> u32 { self.lock().unwrap().capture_latency() }
 	fn playback_and_capture_buffers<'a>(&'a mut self, scope: &'a DummyScope) -> Self::MutSliceIter<'a> {
-		Box::new(
-			OwningIterator::new(
-				self.lock().unwrap(),
-				|v| unsafe { (*v).playback_and_capture_buffers(&scope) }
-			)
+		PermitDrop::new(
+			permit_alloc(move || Box::new(
+				OwningIterator::new(
+					self.lock().unwrap(),
+					|v| unsafe { (*v).playback_and_capture_buffers(&scope) }
+				)
+			))
 		)
 	}
 	fn record_buffers<'a>(&'a self, scope: &'a DummyScope) -> Self::SliceIter<'a> {
-		Box::new(
-			OwningIterator::new(
-				self.lock().unwrap(),
-				|v| unsafe { (*v).record_buffers(&scope)
-			})
-		)
+		PermitDrop::new(
+			permit_alloc(move || Box::new(
+				OwningIterator::new(
+					self.lock().unwrap(),
+					|v| unsafe { (*v).record_buffers(&scope) }
+				)
+			)
+		))
 	}
 }
 
