@@ -16,7 +16,7 @@ pub struct DummyMidiDevice {
 	latency: u32
 }
 impl DummyMidiDevice {
-	pub fn new(latency: u32) -> DummyMidiDevice {
+	pub fn new(latency: u32) -> DummyMidiDevice { // FIXME add playback and capture latency here!
 		DummyMidiDevice {
 			queue: vec![],
 			committed: vec![],
@@ -212,5 +212,50 @@ impl AudioDeviceTrait for Arc<Mutex<DummyAudioDevice>> {
 				|v| unsafe { (*v).record_buffers(&scope)
 			})
 		)
+	}
+}
+
+pub struct DummyDriver {
+	playback_latency: u32,
+	capture_latency: u32,
+	sample_rate: u32,
+
+	audio_devices: std::collections::HashMap<String, Arc<Mutex<DummyAudioDevice>> >,
+	midi_devices: std::collections::HashMap<String, Arc<Mutex<DummyMidiDevice>> >,
+}
+
+impl DriverTrait for DummyDriver {
+	type MidiDev = Arc<Mutex<DummyMidiDevice>>;
+	type AudioDev = Arc<Mutex<DummyAudioDevice>>;
+	type ProcessScope = DummyScope;
+	type Error = ();
+
+	fn activate(&mut self, _: super::backend::AudioThreadState<Self>) { }
+
+	fn new_audio_device(&mut self, n_channels: u32, name: &str) -> Result<Self::AudioDev, Self::Error> {
+		let arc = Arc::new(Mutex::new(DummyAudioDevice::new(n_channels as usize, self.playback_latency, self.capture_latency)));
+		self.audio_devices.insert(name.into(), arc.clone());
+		return Ok(arc);
+	}
+	fn new_midi_device(&mut self, name: &str) -> Result<Self::MidiDev, Self::Error> {
+		let arc = Arc::new(Mutex::new(DummyMidiDevice::new(self.playback_latency)));
+		self.midi_devices.insert(name.into(), arc.clone());
+		return Ok(arc);
+	}
+
+	fn sample_rate(&self) -> u32 {
+		self.sample_rate
+	}
+}
+
+impl DummyDriver {
+	pub fn new(playback_latency: u32, capture_latency: u32, sample_rate: u32) -> DummyDriver {
+		DummyDriver {
+			playback_latency,
+			capture_latency,
+			sample_rate,
+			audio_devices: std::collections::HashMap::new(),
+			midi_devices: std::collections::HashMap::new(),
+		}
 	}
 }
