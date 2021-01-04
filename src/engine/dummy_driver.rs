@@ -313,6 +313,15 @@ impl DummyDriver {
 		inner.backend.as_mut().unwrap().process_callback(&scope);
 	}
 
+	pub fn process_for(&self, n_total_frames: u32, chunksize: u32) {
+		for _ in 0..(n_total_frames / chunksize) {
+			self.process(chunksize);
+		}
+		if n_total_frames % chunksize > 0 {
+			self.process(n_total_frames % chunksize)
+		}
+	}
+
 	pub fn lock<'a>(&'a self) -> impl std::ops::DerefMut<Target = DummyDriverData> + 'a {
 		self.0.lock().unwrap()
 	}
