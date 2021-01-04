@@ -163,7 +163,6 @@ impl<Driver: DriverTrait> AudioThreadState<Driver>
 			self.transport_position += scope.n_frames();
 
 			if song_wraps {
-				println!("song wraps");
 				self.event_channel.send_or_complain(Event::Timestamp(self.song_position, self.transport_position));
 			}
 

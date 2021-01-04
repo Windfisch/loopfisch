@@ -100,7 +100,7 @@ mod tests {
 	#[tokio::test]
 	async fn device_creation() {
 		let driver = dummy_driver::DummyDriver::new(0,0, 48000);
-		let (mut frontend, _events) = launch(driver.clone(), 1000);
+		let (mut frontend, _) = launch(driver.clone(), 1000);
 
 		let aid = frontend.add_device("My Audio Device", 3).expect("Adding audio device failed");
 		let mid = frontend.add_mididevice("My Midi Device").expect("Adding midi device failed");
@@ -120,7 +120,7 @@ mod tests {
 	#[tokio::test]
 	async fn creating_too_many_devices_fails_gracefully() {
 		let driver = dummy_driver::DummyDriver::new(0,0, 48000);
-		let (mut frontend, mut events) = launch(driver.clone(), 1000);
+		let (mut frontend, _) = launch(driver.clone(), 1000);
 
 		for i in 0..32 {
 			frontend.add_device(&format!("audio{}",i), 2).expect("Adding audio device failed");
@@ -133,5 +133,73 @@ mod tests {
 			driver.process(32);
 		}
 		frontend.add_mididevice("midiX").expect_err("Adding midi device should have failed");
+	}
+	
+	#[tokio::test]
+	async fn sample_rate_is_reported() {
+		let driver = dummy_driver::DummyDriver::new(0,0, 13337);
+		let (frontend, _) = launch(driver.clone(), 1000);
+		assert!(frontend.sample_rate() == 13337);
+	}
+	
+	#[tokio::test]
+	async fn song_position_wraps_and_transport_position_does_not_wrap() {
+		let check = |length| {
+			let sample_rate = 48000;
+			let length_samples = sample_rate*length/1000;
+
+			let driver = dummy_driver::DummyDriver::new(0,0, sample_rate);
+			let (frontend, _) = launch(driver.clone(), length);
+
+			assert!(frontend.loop_length() == length_samples);
+			assert!(frontend.song_position() == 0);
+			assert!(frontend.transport_position() == 0);
+
+			for i in (128..3460).step_by(128) {
+				driver.process(128);
+				assert!(frontend.song_position() == i % length_samples);
+				assert!(frontend.transport_position() == i);
+			}
+		};
+
+		check(1000); // loop length is divisible by the process chunk size
+		check(1001); // loop length is not divisible by the chunk size
+	}
+
+	#[tokio::test]
+	async fn midiclock_is_always_active() {
+		for latency in vec![0,256] {
+			let driver = dummy_driver::DummyDriver::new(latency, 0, 96000);
+			let (_frontend, _) = launch(driver.clone(), 1000);
+			driver.process_for(48000, 128);
+			let d = driver.lock();
+			let dev = d.midi_devices.get("clock").unwrap().lock().unwrap();
+			assert_eq!(dev.committed.len(), 2 * 24);
+			if latency == 0 {
+				assert_eq!(dev.committed[0].timestamp, 0);
+			}
+			else {
+				assert_eq!(dev.committed.last().unwrap().timestamp, 48000 - latency);
+			}
+		}
+	}
+
+	#[tokio::test]
+	async fn midiclock_reacts_to_set_loop_length() {
+		for latency in vec![0,64] {
+			let driver = dummy_driver::DummyDriver::new(latency, 0, 96000);
+			let (mut frontend, _) = launch(driver.clone(), 1000);
+			frontend.set_loop_length(48000, 8).unwrap();
+			driver.process_for(48000, 128);
+			let d = driver.lock();
+			let dev = d.midi_devices.get("clock").unwrap().lock().unwrap();
+			assert_eq!(dev.committed.len(), 8 * 24);
+			if latency == 0 {
+				assert_eq!(dev.committed[0].timestamp, 0);
+			}
+			else {
+				assert_eq!(dev.committed.last().unwrap().timestamp, 48000 - latency);
+			}
+		}
 	}
 }
