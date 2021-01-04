@@ -62,18 +62,17 @@ impl AudioTake {
 				let mut position = self.playback_position;
 				let buffer = &mut channel_slices.0[range.clone()];
 				for d in buffer {
-					if position >= length {
-						channel_buffer.rewind();
-						position = 0;
-						println!("\nrewind in playback\n");
-					}
-					position += 1;
-
 					let val = channel_buffer.next();
 					if let Some(v) = val {
 						if self.unmuted { // FIXME fade in / out to avoid clicks
 							*d += v;
 						}
+					}
+
+					position += 1;
+					if position >= length {
+						channel_buffer.rewind();
+						position = 0;
 					}
 				}
 			}
