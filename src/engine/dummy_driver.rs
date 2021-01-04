@@ -165,19 +165,19 @@ pub struct DummyAudioDevice {
 	pub capture_buffers: Vec<Vec<f32>>,
 }
 
-pub struct CaptureIter<'a>(Iter<'a, Vec<f32>>, usize);
+pub struct CaptureIter<'a>(Iter<'a, Vec<f32>>, usize, usize);
 impl<'a> Iterator for CaptureIter<'a> {
 	type Item = &'a [f32];
 	fn next(&mut self) -> Option<Self::Item> {
-		self.0.next().map(|vec| &vec[self.1..])
+		self.0.next().map(|vec| &vec[self.1..self.2])
 	}
 }
 
-pub struct PlaybackCaptureIter<'a>(Zip<IterMut<'a, Vec<f32>>, Iter<'a, Vec<f32>>>, usize);
+pub struct PlaybackCaptureIter<'a>(Zip<IterMut<'a, Vec<f32>>, Iter<'a, Vec<f32>>>, usize, usize);
 impl<'a> Iterator for PlaybackCaptureIter<'a> {
 	type Item = (&'a mut [f32], &'a [f32]);
 	fn next(&mut self) -> Option<Self::Item> {
-		self.0.next().map(|x| (&mut x.0[self.1..], &x.1[self.1..]) )
+		self.0.next().map(|x| (&mut x.0[self.1..], &x.1[self.1..self.2]) )
 	}
 }
 
@@ -213,10 +213,10 @@ impl AudioDeviceTrait for DummyAudioDevice {
 				}
 			}
 		});
-		PlaybackCaptureIter(self.playback_buffers.iter_mut().zip(self.capture_buffers.iter()), scope.time as usize)
+		PlaybackCaptureIter(self.playback_buffers.iter_mut().zip(self.capture_buffers.iter()), scope.time as usize, (scope.time + scope.n_frames) as usize)
 	}
 	fn record_buffers(&self, scope: &DummyScope) -> CaptureIter {
-		CaptureIter(self.capture_buffers.iter(), scope.time as usize)
+		CaptureIter(self.capture_buffers.iter(), scope.time as usize, (scope.time + scope.n_frames) as usize)
 	}
 }
 
