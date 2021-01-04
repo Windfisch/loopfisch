@@ -88,7 +88,7 @@ mod tests {
 	#[tokio::test]
 	async fn special_devices_are_created() {
 		let driver = dummy_driver::DummyDriver::new(0,0, 48000);
-		let (mut frontend, _events) = launch(driver.clone(), 1000);
+		let (_frontend, _events) = launch(driver.clone(), 1000);
 
 		let guard = driver.lock();
 		assert!(guard.audio_devices.len() == 1);
@@ -201,5 +201,38 @@ mod tests {
 				assert_eq!(dev.committed.last().unwrap().timestamp, 48000 - latency);
 			}
 		}
+	}
+
+	#[tokio::test]
+	async fn metronome_is_always_active_and_reacts_to_set_loop_length() {
+		use super::testutils;
+		let driver = dummy_driver::DummyDriver::new(2048, 0, 48000);
+		let (mut frontend, _) = launch(driver.clone(), 1337);
+		frontend.set_loop_length(480000, 8).unwrap();
+		driver.process_for(480000, 128);
+		let d = driver.lock();
+		let dev = d.audio_devices.get("metronome").unwrap().lock().unwrap();
+		let ticks = testutils::ticks(&dev.playback_buffers[0], 0.24);
+		assert_eq!(ticks.len(), 8);
+		assert_eq!(*ticks.last().unwrap(), 480000-2048)
+	}
+
+	#[tokio::test]
+	async fn restart_midi_transport() {
+		use crate::midi_message::MidiMessage;
+		let driver = dummy_driver::DummyDriver::new(2048, 0, 44100);
+		let (mut frontend, _) = launch(driver.clone(), 1000);
+
+		let id = frontend.add_mididevice("mididev").unwrap();
+		driver.process_for(13337, 256);
+		frontend.restart_midi_transport(id).unwrap();
+		driver.process_for(88200, 256);
+
+		let d = driver.lock();
+		let dev = d.midi_devices.get("mididev").unwrap().lock().unwrap();
+		assert_eq!(dev.committed, vec![
+			MidiMessage { timestamp: 13337, data: [0xFC, 0, 0], datalen: 1 },
+			MidiMessage { timestamp: 44100, data: [0xFA, 0, 0], datalen: 1 },
+		]);
 	}
 }
