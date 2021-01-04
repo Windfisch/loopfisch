@@ -235,4 +235,51 @@ mod tests {
 			MidiMessage { timestamp: 44100, data: [0xFA, 0, 0], datalen: 1 },
 		]);
 	}
+
+	#[tokio::test]
+	async fn audio_echo_can_be_enabled_and_disabled() {
+		let driver = dummy_driver::DummyDriver::new(0, 0, 44100);
+		let (mut frontend, _) = launch(driver.clone(), 1000);
+
+		let id = frontend.add_device("audiodev", 2).unwrap();
+		
+		{
+			let d = driver.lock();
+			let mut dev = d.audio_devices.get("audiodev").unwrap().lock().unwrap();
+			dev.capture_buffers[0] = (0..89000).map(|x| x as f32).collect();
+			dev.capture_buffers[1] = (0..89000).map(|x| -x as f32).collect();
+		}
+
+		for _ in 0..4 {
+			driver.process_for(11025, 128);
+			frontend.set_audiodevice_echo(id, true).unwrap();
+			driver.process_for(11025, 128);
+			frontend.set_audiodevice_echo(id, false).unwrap();
+		}
+
+		let d = driver.lock();
+		let dev = d.audio_devices.get("audiodev").unwrap().lock().unwrap();
+		assert_eq!(
+			dev.playback_buffers[0],
+			(0..88200).map(|x| {
+				if x % 22050 >= 11025 {
+					x as f32
+				}
+				else {
+					0.0
+				}
+			}).collect::<Vec<f32>>()
+		);
+		assert_eq!(
+			dev.playback_buffers[1],
+			(0..88200).map(|x| {
+				if x % 22050 >= 11025 {
+					-x as f32
+				}
+				else {
+					0.0
+				}
+			}).collect::<Vec<f32>>()
+		);
+	}
 }
