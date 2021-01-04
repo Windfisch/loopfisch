@@ -238,7 +238,7 @@ mod tests {
 	}
 
 	fn wait() {
-		std::thread::sleep(std::time::Duration::from_millis(10));
+		std::thread::sleep(std::time::Duration::from_millis(40));
 	}
 
 	#[test]
@@ -328,7 +328,7 @@ mod tests {
 		rt_assert!( buffer.push(0).is_ok() );
 		assert_no_alloc(|| buffer.rewind());
 
-		for i in 1..1024 {
+		for i in 1..256 {
 			if i % 8 == 6 {
 				wait();
 			}

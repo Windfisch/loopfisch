@@ -7,6 +7,10 @@ use std::sync::Arc;
 use std::collections::HashMap;
 use crate::id_generator::IdGenerator;
 
+#[cfg(test)]
+const CHUNKSIZE: usize = 44100 * 16;
+
+#[cfg(not(test))]
 const CHUNKSIZE: usize = 8*1024;
 
 pub struct GuiAudioTake {
