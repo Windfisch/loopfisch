@@ -97,6 +97,22 @@ mod tests {
 	}
 
 	macro_rules! assert_sleq {
+		($lhs:expr, 0.0) => {{
+			let lhs = &$lhs;
+			let rhs = &vec![0.0; lhs.len()];
+			if *lhs != *rhs {
+				slice_diff(lhs, rhs);
+				panic!("Slices are different!");
+			}
+		}};
+		($lhs:expr, 0.0, $reason:expr) => {{
+			let lhs = &$lhs;
+			let rhs = &vec![0.0; lhs.len()];
+			if *lhs != *rhs {
+				slice_diff(lhs, rhs);
+				panic!($reason);
+			}
+		}};
 		($lhs:expr, $rhs:expr) => {{
 			let lhs = &$lhs;
 			let rhs = &$rhs;
@@ -122,8 +138,8 @@ mod tests {
 		let (_frontend, _events) = launch(driver.clone(), 1000);
 
 		let guard = driver.lock();
-		assert!(guard.audio_devices.len() == 1);
-		assert!(guard.midi_devices.len() == 1);
+		assert_eq!(guard.audio_devices.len(), 1);
+		assert_eq!(guard.midi_devices.len(), 1);
 		assert!(guard.audio_devices.contains_key("metronome"));
 		assert!(guard.midi_devices.contains_key("clock"));
 	}
@@ -136,16 +152,16 @@ mod tests {
 		let aid = frontend.add_device("My Audio Device", 3).expect("Adding audio device failed");
 		let mid = frontend.add_mididevice("My Midi Device").expect("Adding midi device failed");
 
-		assert!(frontend.devices().len() == 1);
-		assert!(frontend.devices().get(&aid).expect("could not find device").info().n_channels == 3);
+		assert_eq!(frontend.devices().len(), 1);
+		assert_eq!(frontend.devices().get(&aid).expect("could not find device").info().n_channels, 3);
 		assert!(frontend.mididevices.contains_key(&mid));
 
 		let guard = driver.lock();
-		assert!(guard.audio_devices.len() == 2);
-		assert!(guard.midi_devices.len() == 2);
+		assert_eq!(guard.audio_devices.len(), 2);
+		assert_eq!(guard.midi_devices.len(), 2);
 		assert!(guard.audio_devices.contains_key("My Audio Device"));
 		assert!(guard.midi_devices.contains_key("My Midi Device"));
-		assert!(guard.audio_devices.get("My Audio Device").unwrap().record_buffers(&dummy_driver::DummyScope::new()).count() == 3);
+		assert_eq!(guard.audio_devices.get("My Audio Device").unwrap().record_buffers(&dummy_driver::DummyScope::new()).count(), 3);
 	}
 
 	#[tokio::test]
@@ -170,7 +186,7 @@ mod tests {
 	async fn sample_rate_is_reported() {
 		let driver = dummy_driver::DummyDriver::new(0,0, 13337);
 		let (frontend, _) = launch(driver.clone(), 1000);
-		assert!(frontend.sample_rate() == 13337);
+		assert_eq!(frontend.sample_rate(), 13337);
 	}
 	
 	#[tokio::test]
@@ -182,14 +198,14 @@ mod tests {
 			let driver = dummy_driver::DummyDriver::new(0,0, sample_rate);
 			let (frontend, _) = launch(driver.clone(), length);
 
-			assert!(frontend.loop_length() == length_samples);
-			assert!(frontend.song_position() == 0);
-			assert!(frontend.transport_position() == 0);
+			assert_eq!(frontend.loop_length(), length_samples);
+			assert_eq!(frontend.song_position(), 0);
+			assert_eq!(frontend.transport_position(), 0);
 
 			for i in (128..3460).step_by(128) {
 				driver.process(128);
-				assert!(frontend.song_position() == i % length_samples);
-				assert!(frontend.transport_position() == i);
+				assert_eq!(frontend.song_position(), i % length_samples);
+				assert_eq!(frontend.transport_position(), i);
 			}
 		};
 
@@ -291,10 +307,10 @@ mod tests {
 		let d = driver.lock();
 		let dev = d.audio_devices.get("audiodev").unwrap().lock().unwrap();
 		for t in (0..88200).step_by(22050) {
-			assert_eq!(dev.playback_buffers[0][t..t+11025], vec![0.0; 11025]);
-			assert_eq!(dev.playback_buffers[0][t+11025..t+22050], dev.capture_buffers[0][(t+11025)..(t+22050)]);
-			assert_eq!(dev.playback_buffers[1][t..t+11025], vec![0.0; 11025]);
-			assert_eq!(dev.playback_buffers[1][t+11025..t+22050], dev.capture_buffers[1][(t+11025)..(t+22050)]);
+			assert_sleq!(dev.playback_buffers[0][t..t+11025], 0.0);
+			assert_sleq!(dev.playback_buffers[0][t+11025..t+22050], dev.capture_buffers[0][(t+11025)..(t+22050)]);
+			assert_sleq!(dev.playback_buffers[1][t..t+11025], 0.0);
+			assert_sleq!(dev.playback_buffers[1][t+11025..t+22050], dev.capture_buffers[1][(t+11025)..(t+22050)]);
 		}
 	}
 
@@ -359,10 +375,10 @@ mod tests {
 			let capture_begin = 44100;
 			let playback_begin = capture_begin + 88200;
 			for channel in 0..=1 {
-				assert!(dev.playback_buffers[channel][0..playback_begin+late_offset] == vec![0.0; playback_begin+late_offset], "expected silence at the beginning");
-				assert!(dev.playback_buffers[channel][playback_begin+late_offset..playback_begin+88200] == dev.capture_buffers[channel][capture_begin+late_offset..capture_begin+88200],
+				assert_sleq!(dev.playback_buffers[channel][0..playback_begin+late_offset], 0.0, "expected silence at the beginning");
+				assert_sleq!(dev.playback_buffers[channel][playback_begin+late_offset..playback_begin+88200], dev.capture_buffers[channel][capture_begin+late_offset..capture_begin+88200],
 					"first repetition was not played correctly");
-				assert!(dev.playback_buffers[channel][(playback_begin+88200)..(playback_begin+2*88200)] == dev.capture_buffers[channel][capture_begin..capture_begin+88200],
+				assert_sleq!(dev.playback_buffers[channel][(playback_begin+88200)..(playback_begin+2*88200)], dev.capture_buffers[channel][capture_begin..capture_begin+88200],
 					"second repetition was not played correctly");
 			}
 		}
@@ -385,11 +401,11 @@ mod tests {
 		let d = driver.lock();
 		let dev = d.audio_devices.get("audiodev").unwrap().lock().unwrap();
 		let begin = 44100-playback_latency;
-		assert!(dev.playback_buffers[0][0..begin] == vec![0.0; begin],
+		assert_sleq!(dev.playback_buffers[0][0..begin], 0.0,
 			"expected silence at the beginning");
-		assert!(dev.playback_buffers[0][begin..begin+44100] == dev.capture_buffers[0][capture_latency..44100 + capture_latency],
+		assert_sleq!(dev.playback_buffers[0][begin..begin+44100], dev.capture_buffers[0][capture_latency..44100 + capture_latency],
 			"first repetition was not played correctly");
-		assert!(dev.playback_buffers[0][begin+44100..begin+2*44100] == dev.capture_buffers[0][capture_latency..44100 + capture_latency],
+		assert_sleq!(dev.playback_buffers[0][begin+44100..begin+2*44100], dev.capture_buffers[0][capture_latency..44100 + capture_latency],
 			"second repetition was not played correctly");
 
 		// TODO FIXME: test for midi takes
@@ -418,9 +434,9 @@ mod tests {
 		let d = driver.lock();
 		let dev = d.audio_devices.get("audiodev").unwrap().lock().unwrap();
 		let t = 22050;
-		assert_sleq!(dev.playback_buffers[0][4*t..5*t], vec![0.0; t], "expected silence when muted");
+		assert_sleq!(dev.playback_buffers[0][4*t..5*t], 0.0, "expected silence when muted");
 		assert_sleq!(dev.playback_buffers[0][5*t..6*t], dev.capture_buffers[0][3*t..4*t], "unmuted part of first repetition was not played correctly");
 		assert_sleq!(dev.playback_buffers[0][6*t..7*t], dev.capture_buffers[0][2*t..3*t], "unmuted part of second repetition was not played correctly");
-		assert_sleq!(dev.playback_buffers[0][7*t..8*t], vec![0.0; t], "expected silence when muted");
+		assert_sleq!(dev.playback_buffers[0][7*t..8*t], 0.0, "expected silence when muted");
 	}
 }
