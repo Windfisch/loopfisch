@@ -314,6 +314,21 @@ mod tests {
 		}
 	}
 
+	#[tokio::test]
+	async fn timestamp_events_are_sent() {
+		for chunksize in vec![256, 100] {
+			let driver = dummy_driver::DummyDriver::new(0, 0, 44100);
+			let (_frontend, mut events) = launch(driver.clone(), 1000);
+
+			driver.process_for(44100*4+2*chunksize, chunksize);
+			for t in (0..44100*4+1).step_by(44100).skip(1) {
+				let time_of_wrap_in_chunk = 1 + (t-1) % chunksize;
+				let time_at_chunk_end = chunksize - time_of_wrap_in_chunk;
+				assert_eq!(events.receive().await, Event::Timestamp(time_at_chunk_end, t + time_at_chunk_end));
+			}
+		}
+	}
+
 	/// Checks if the next element in the event queue is `required_event`, ignoring all Timestamp events
 	/// on the way. Fails if a different or no element was found after 1 second.
 	async fn assert_receive(events: &mut crate::realtime_send_queue::Consumer<Event>, required_event: &Event) {
