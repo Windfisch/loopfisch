@@ -83,6 +83,7 @@ pub fn launch<Driver: DriverTrait>(driver: Driver, loop_length_msec: u32) -> (Fr
 mod tests {
 	use super::*;
 	use tokio;
+	use std::sync::{Arc,Mutex};
 
 
 	#[tokio::test]
@@ -236,19 +237,19 @@ mod tests {
 		]);
 	}
 
+	fn fill_audio_device(driver: &dummy_driver::DummyDriver, name: &str, length: usize) {
+		let d = driver.lock();
+		let mut dev = d.audio_devices.get(name).unwrap().lock().unwrap();
+		dev.capture_buffers[0] = (0..length).map(|x| x as f32).collect();
+		dev.capture_buffers[1] = (0..length).map(|x| -(x as f32)).collect();
+	}
+
 	#[tokio::test]
 	async fn audio_echo_can_be_enabled_and_disabled() {
 		let driver = dummy_driver::DummyDriver::new(0, 0, 44100);
 		let (mut frontend, _) = launch(driver.clone(), 1000);
-
 		let id = frontend.add_device("audiodev", 2).unwrap();
-		
-		{
-			let d = driver.lock();
-			let mut dev = d.audio_devices.get("audiodev").unwrap().lock().unwrap();
-			dev.capture_buffers[0] = (0..89000).map(|x| x as f32).collect();
-			dev.capture_buffers[1] = (0..89000).map(|x| -x as f32).collect();
-		}
+		fill_audio_device(&driver, "audiodev", 89000);
 
 		for _ in 0..4 {
 			driver.process_for(11025, 128);
@@ -259,27 +260,66 @@ mod tests {
 
 		let d = driver.lock();
 		let dev = d.audio_devices.get("audiodev").unwrap().lock().unwrap();
-		assert_eq!(
-			dev.playback_buffers[0],
-			(0..88200).map(|x| {
-				if x % 22050 >= 11025 {
-					x as f32
+		for t in (0..88200).step_by(22050) {
+			assert_eq!(dev.playback_buffers[0][t..t+11025], vec![0.0; 11025]);
+			assert_eq!(dev.playback_buffers[0][t+11025..t+22050], dev.capture_buffers[0][(t+11025)..(t+22050)]);
+			assert_eq!(dev.playback_buffers[1][t..t+11025], vec![0.0; 11025]);
+			assert_eq!(dev.playback_buffers[1][t+11025..t+22050], dev.capture_buffers[1][(t+11025)..(t+22050)]);
+		}
+	}
+
+	/// Checks if the next element in the event queue is `required_event`, ignoring all Timestamp events
+	/// on the way. Fails if a different or no element was found after 1 second.
+	async fn assert_receive(events: &mut crate::realtime_send_queue::Consumer<Event>, required_event: &Event) {
+		async fn wait_for(events: &mut crate::realtime_send_queue::Consumer<Event>, required_event: &Event) {
+			loop {
+				let ev = events.receive().await;
+				if ev == *required_event {
+					return;
 				}
-				else {
-					0.0
+				match ev {
+					Event::Timestamp(_, _) => continue,
+					other => assert!(false, "Expected event {:?} but found {:?}", required_event, other)
 				}
-			}).collect::<Vec<f32>>()
-		);
-		assert_eq!(
-			dev.playback_buffers[1],
-			(0..88200).map(|x| {
-				if x % 22050 >= 11025 {
-					-x as f32
-				}
-				else {
-					0.0
-				}
-			}).collect::<Vec<f32>>()
-		);
+			}
+		}
+
+		let result = async_std::future::timeout(std::time::Duration::from_millis(1000), wait_for(events, required_event)).await;
+		assert!(result.is_ok(), "Expected event {:?} was not received after 1 sec.", required_event);
+	}
+
+	#[tokio::test]
+	async fn audio_takes_can_be_recorded_and_finished_early() {// TODO test latency handling, test early and late finish
+		for on_point_offset in vec![0,5] { // check this for loop points being "on point" with the chunksizes and being not on point.
+			let driver = dummy_driver::DummyDriver::new(0, 0, 44100);
+			let (mut frontend, mut events) = launch(driver.clone(), 1000);
+			frontend.set_loop_length(44100,4).unwrap();
+			let dev_id = frontend.add_device("audiodev", 2).unwrap();
+			fill_audio_device(&driver, "audiodev", 44100*8);
+
+			// add a take during the first period
+			driver.process_for(30000, 128);
+			let take_id = frontend.add_audiotake(dev_id, true).unwrap();
+			driver.process_for(14100 + on_point_offset, 128);
+			assert_receive(&mut events, &Event::AudioTakeStateChanged(dev_id, take_id, RecordState::Recording, 44100)).await;
+			
+			// let it record for the second and third period; finish recording during the third
+			driver.process_for(70000 - on_point_offset, 128);
+			frontend.finish_audiotake(dev_id, take_id, 88200).unwrap();
+			driver.process_for(18200 + on_point_offset, 128);
+			assert_receive(&mut events, &Event::AudioTakeStateChanged(dev_id, take_id, RecordState::Finished, 44100+88200)).await;
+
+			// let it play for four periods, i.e. two repetitions
+			driver.process_for(2*88200 - on_point_offset, 128);
+
+			let d = driver.lock();
+			let dev = d.audio_devices.get("audiodev").unwrap().lock().unwrap();
+			let capture_begin = 44100;
+			let playback_begin = capture_begin + 88200;
+			assert!(dev.playback_buffers[0][playback_begin..playback_begin+88200] == dev.capture_buffers[0][capture_begin..capture_begin+88200],
+				"first repetition was not played correctly");
+			assert!(dev.playback_buffers[0][(playback_begin+88200)..(playback_begin+2*88200)] == dev.capture_buffers[0][capture_begin..capture_begin+88200],
+				"second repetition was not played correctly");
+		}
 	}
 }

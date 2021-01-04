@@ -1,3 +1,4 @@
+#[derive(std::cmp::PartialEq, Debug)]
 pub enum Event {
 	AudioTakeStateChanged(usize, u32, RecordState, u32),
 	MidiTakeStateChanged(usize, u32, RecordState, u32 /* timestamp */),
