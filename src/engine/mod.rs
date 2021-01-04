@@ -289,8 +289,11 @@ mod tests {
 	}
 
 	#[tokio::test]
-	async fn audio_takes_can_be_recorded_and_finished_early() {// TODO test latency handling, test early and late finish
-		for on_point_offset in vec![0,5] { // check this for loop points being "on point" with the chunksizes and being not on point.
+	async fn audio_takes_can_be_recorded() { // TODO test latencies
+		// on_point_offset controls whether loop points align with chunk boundaries (=0) or not (>0 and < chunksize).
+		// finish_late controls whether the take is finished before its actual end, or finished retroactively afterwards.
+		for (on_point_offset, finish_late) in vec![(0, false) , (5, false), (0, true)] {
+			println!("on_point_offset = {}; finish_late = {};", on_point_offset, finish_late);
 			let driver = dummy_driver::DummyDriver::new(0, 0, 44100);
 			let (mut frontend, mut events) = launch(driver.clone(), 1000);
 			frontend.set_loop_length(44100,4).unwrap();
@@ -303,23 +306,35 @@ mod tests {
 			driver.process_for(14100 + on_point_offset, 128);
 			assert_receive(&mut events, &Event::AudioTakeStateChanged(dev_id, take_id, RecordState::Recording, 44100)).await;
 			
-			// let it record for the second and third period; finish recording during the third
-			driver.process_for(70000 - on_point_offset, 128);
-			frontend.finish_audiotake(dev_id, take_id, 88200).unwrap();
-			driver.process_for(18200 + on_point_offset, 128);
-			assert_receive(&mut events, &Event::AudioTakeStateChanged(dev_id, take_id, RecordState::Finished, 44100+88200)).await;
-
-			// let it play for four periods, i.e. two repetitions
+			if !finish_late {
+				// let it record for the second and third period; finish recording during the third
+				driver.process_for(70000 - on_point_offset, 128);
+				frontend.finish_audiotake(dev_id, take_id, 88200).unwrap();
+				driver.process_for(18200 + on_point_offset, 128);
+				assert_receive(&mut events, &Event::AudioTakeStateChanged(dev_id, take_id, RecordState::Finished, 44100+88200)).await;
+			}
+			else {
+				// let it record for the second and third period and a bit of the fourth period, then retroactively finish
+				driver.process_for(88200 + 300, 128);
+				frontend.finish_audiotake(dev_id, take_id, 88200).unwrap();
+				driver.process_for(33, 128);
+				assert_receive(&mut events, &Event::AudioTakeStateChanged(dev_id, take_id, RecordState::Finished, 44100+88200)).await;
+			}
+			// let it play for (at least) four periods, i.e. two repetitions
 			driver.process_for(2*88200 - on_point_offset, 128);
 
 			let d = driver.lock();
 			let dev = d.audio_devices.get("audiodev").unwrap().lock().unwrap();
+			let late_offset = if finish_late { 300 } else { 0 };
 			let capture_begin = 44100;
 			let playback_begin = capture_begin + 88200;
-			assert!(dev.playback_buffers[0][playback_begin..playback_begin+88200] == dev.capture_buffers[0][capture_begin..capture_begin+88200],
-				"first repetition was not played correctly");
-			assert!(dev.playback_buffers[0][(playback_begin+88200)..(playback_begin+2*88200)] == dev.capture_buffers[0][capture_begin..capture_begin+88200],
-				"second repetition was not played correctly");
+			for channel in 0..=1 {
+				assert!(dev.playback_buffers[channel][0..playback_begin+late_offset] == vec![0.0; playback_begin+late_offset], "expected silence at the beginning");
+				assert!(dev.playback_buffers[channel][playback_begin+late_offset..playback_begin+88200] == dev.capture_buffers[channel][capture_begin+late_offset..capture_begin+88200],
+					"first repetition was not played correctly");
+				assert!(dev.playback_buffers[channel][(playback_begin+88200)..(playback_begin+2*88200)] == dev.capture_buffers[channel][capture_begin..capture_begin+88200],
+					"second repetition was not played correctly");
+			}
 		}
 	}
 }
