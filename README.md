@@ -22,7 +22,7 @@ Features
 - Fully (PC-)keyboard-controllable (_not yet_)
 - MIDI clock master
 - MIDI transport slave (_not yet_)
-- Unit tests (_partially_)
+- Close-to-full unit test coverage for the engine
 
 Build instructions
 ------------------
