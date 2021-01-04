@@ -49,27 +49,9 @@ impl<T: AudioDeviceTrait> AudioMetronome<T> {
 mod tests {
 	use super::*;
 	use super::super::dummy_driver::*;
+	use super::super::testutils;
 
 	const sample_rate : u32 = 44100;
-
-	fn ticks(samples: &[f32], level: f32) -> Vec<usize> {
-		let mut high_time = 0;
-		let mut result = vec![];
-		for (i,s) in samples.iter().enumerate() {
-			if s.abs() <= level/2.0 {
-				if high_time > 0 {
-					high_time -= 1;
-				}
-			}
-			else if s.abs() >= level {
-				if high_time == 0 {
-					result.push(i);
-				}
-				high_time = 100;
-			}
-		}
-		return result;
-	}
 
 	#[test]
 	pub fn zero_dc_offset() {
@@ -94,7 +76,7 @@ mod tests {
 				let mut metronome = AudioMetronome::new(device);
 				let mut scope = DummyScope::new();
 				scope.run_for(4*song_length, 1024, |scope| metronome.process(scope.time, song_length, n_beats, sample_rate, scope));
-				let n_ticks = ticks(&metronome.device.playback_buffers[0], 0.2).len();
+				let n_ticks = testutils::ticks(&metronome.device.playback_buffers[0], 0.2).len();
 				assert!(n_ticks as u32 == 4*n_beats);
 			}
 		}
@@ -129,7 +111,7 @@ mod tests {
 			scope.run_for(4*song_length, 1024, |scope| metronome.process(scope.time, song_length, 8, sample_rate, scope));
 
 
-			let beats = ticks(&metronome.device.playback_buffers[0], 0.25);
+			let beats = testutils::ticks(&metronome.device.playback_buffers[0], 0.25);
 			let found = beats.into_iter().find(|x| *x as u32 == song_length - latency).is_some();
 			assert!(found);
 		}
@@ -146,7 +128,7 @@ mod tests {
 			let mut scope = DummyScope::new();
 			scope.run_for(4*song_length, 1024, |scope| metronome.process(scope.time, song_length, 8, sample_rate, scope));
 
-			let (lo, hi) = super::super::testutils::spacing( ticks(&metronome.device.playback_buffers[0], 0.25).into_iter() );
+			let (lo, hi) = testutils::spacing( testutils::ticks(&metronome.device.playback_buffers[0], 0.25).into_iter() );
 			assert!(hi-lo <= 10); // 0.25ms are acceptable
 		}
 	}

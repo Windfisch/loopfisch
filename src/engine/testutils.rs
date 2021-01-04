@@ -49,3 +49,23 @@ pub fn rand_iter_f32(seed: u32) -> impl Iterator<Item=f32> {
 pub fn rand_vec_f32(seed: u32, length: usize) -> Vec<f32> {
 	rand_iter_f32(seed).take(length).collect()
 }
+	
+pub fn ticks(samples: &[f32], level: f32) -> Vec<usize> {
+	let mut high_time = 0;
+	let mut result = vec![];
+	for (i,s) in samples.iter().enumerate() {
+		if s.abs() <= level/2.0 {
+			if high_time > 0 {
+				high_time -= 1;
+			}
+		}
+		else if s.abs() >= level {
+			if high_time == 0 {
+				result.push(i);
+			}
+			high_time = 100;
+		}
+	}
+	return result;
+}
+

@@ -67,8 +67,8 @@ pub struct MidiDeviceSettings {
 impl MidiDeviceSettings {
 	pub fn new() -> MidiDeviceSettings {
 		MidiDeviceSettings {
-			start_transport_pending: true,
-			stop_transport_pending: true
+			start_transport_pending: false,
+			stop_transport_pending: false
 		}
 	}
 }
