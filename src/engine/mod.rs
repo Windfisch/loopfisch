@@ -85,6 +85,36 @@ mod tests {
 	use tokio;
 	use std::sync::{Arc,Mutex};
 
+	fn slice_diff<T: PartialEq + std::fmt::Debug>(lhs: &[T], rhs: &[T]) {
+		if let Some(result) = lhs.iter().zip(rhs.iter()).map(|x| x.0 != x.1).enumerate().find(|t| t.1) {
+			let index = result.0;
+			let max = std::cmp::max(lhs.len(), rhs.len());
+			let lo = if index < 10 { 0 } else { index-10 };
+			let hi = if index + 10 >= max { max } else { index+10 };
+
+			println!("First difference at {}, context: {:?} != {:?}", index, &lhs[lo..hi], &rhs[lo..hi]);
+		}
+	}
+
+	macro_rules! assert_sleq {
+		($lhs:expr, $rhs:expr) => {{
+			let lhs = &$lhs;
+			let rhs = &$rhs;
+			if *lhs != *rhs {
+				slice_diff(lhs, rhs);
+				panic!("Slices are different!");
+			}
+		}};
+		($lhs:expr, $rhs:expr, $reason:expr) => {{
+			let lhs = &$lhs;
+			let rhs = &$rhs;
+			if *lhs != *rhs {
+				slice_diff(lhs, rhs);
+				panic!($reason);
+			}
+		}}
+	}
+
 
 	#[tokio::test]
 	async fn special_devices_are_created() {
@@ -363,5 +393,34 @@ mod tests {
 			"second repetition was not played correctly");
 
 		// TODO FIXME: test for midi takes
+	}
+
+	#[tokio::test]
+	async fn audio_takes_can_be_muted_and_unmuted() {
+		let driver = dummy_driver::DummyDriver::new(0, 0, 44100);
+		let (mut frontend, _) = launch(driver.clone(), 1000);
+		frontend.set_loop_length(44100,4).unwrap();
+		let dev_id = frontend.add_device("audiodev", 2).unwrap();
+		fill_audio_device(&driver, "audiodev", 44100*8);
+
+		driver.process_for(22050, 128); // not capturing
+		let take_id = frontend.add_audiotake(dev_id, false).unwrap();
+		frontend.finish_audiotake(dev_id, take_id, 44100).unwrap();
+		driver.process_for(22050, 128); // not capturing
+		driver.process_for(44100, 128); // capturing
+
+		driver.process_for(22050, 128); // playback, muted
+		frontend.set_audiotake_unmuted(dev_id, take_id, true).unwrap();
+		driver.process_for(44100, 128); // playback, unmuted
+		frontend.set_audiotake_unmuted(dev_id, take_id, false).unwrap();
+		driver.process_for(22050, 128); // playback, muted
+			
+		let d = driver.lock();
+		let dev = d.audio_devices.get("audiodev").unwrap().lock().unwrap();
+		let t = 22050;
+		assert_sleq!(dev.playback_buffers[0][4*t..5*t], vec![0.0; t], "expected silence when muted");
+		assert_sleq!(dev.playback_buffers[0][5*t..6*t], dev.capture_buffers[0][3*t..4*t], "unmuted part of first repetition was not played correctly");
+		assert_sleq!(dev.playback_buffers[0][6*t..7*t], dev.capture_buffers[0][2*t..3*t], "unmuted part of second repetition was not played correctly");
+		assert_sleq!(dev.playback_buffers[0][7*t..8*t], vec![0.0; t], "expected silence when muted");
 	}
 }
