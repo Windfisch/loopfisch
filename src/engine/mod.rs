@@ -289,7 +289,7 @@ mod tests {
 	}
 
 	#[tokio::test]
-	async fn audio_takes_can_be_recorded() { // TODO test latencies
+	async fn audio_takes_can_be_recorded() {
 		// on_point_offset controls whether loop points align with chunk boundaries (=0) or not (>0 and < chunksize).
 		// finish_late controls whether the take is finished before its actual end, or finished retroactively afterwards.
 		for (on_point_offset, finish_late) in vec![(0, false) , (5, false), (0, true)] {
@@ -336,5 +336,32 @@ mod tests {
 					"second repetition was not played correctly");
 			}
 		}
+	}
+	
+	#[tokio::test]
+	async fn latency_compensation() {
+		let playback_latency = 64;
+		let capture_latency = 128;
+		let driver = dummy_driver::DummyDriver::new(playback_latency as u32, capture_latency as u32, 44100);
+		let (mut frontend, _) = launch(driver.clone(), 1000);
+		frontend.set_loop_length(44100,4).unwrap();
+		let dev_id = frontend.add_device("audiodev", 2).unwrap();
+		fill_audio_device(&driver, "audiodev", 44100*8);
+
+		let take_id = frontend.add_audiotake(dev_id, true).unwrap();
+		frontend.finish_audiotake(dev_id, take_id, 44100).unwrap();
+		driver.process_for(3*44100, 128);
+			
+		let d = driver.lock();
+		let dev = d.audio_devices.get("audiodev").unwrap().lock().unwrap();
+		let begin = 44100-playback_latency;
+		assert!(dev.playback_buffers[0][0..begin] == vec![0.0; begin],
+			"expected silence at the beginning");
+		assert!(dev.playback_buffers[0][begin..begin+44100] == dev.capture_buffers[0][capture_latency..44100 + capture_latency],
+			"first repetition was not played correctly");
+		assert!(dev.playback_buffers[0][begin+44100..begin+2*44100] == dev.capture_buffers[0][capture_latency..44100 + capture_latency],
+			"second repetition was not played correctly");
+
+		// TODO FIXME: test for midi takes
 	}
 }
