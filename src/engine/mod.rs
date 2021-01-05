@@ -86,21 +86,24 @@ mod tests {
 	use tokio;
 	use smallvec::smallvec;
 	use testutils::*;
+	use dummy_driver::*;
+	use crate::midi_message::MidiMessage;
+	use crate::realtime_send_queue;
 
-	fn midi_events_in_range(iter: impl Iterator<Item = dummy_driver::DummyMidiEvent>, range: std::ops::Range<u32>) -> impl Iterator<Item = dummy_driver::DummyMidiEvent> {
+	fn midi_events_in_range(iter: impl Iterator<Item = DummyMidiEvent>, range: std::ops::Range<u32>) -> impl Iterator<Item = DummyMidiEvent> {
 		let start = range.start;
 		iter
 			.filter(move |e| range.contains(&e.time))
-			.map(move |e| dummy_driver::DummyMidiEvent { data: e.data.clone(), time: e.time - start })
+			.map(move |e| DummyMidiEvent { data: e.data.clone(), time: e.time - start })
 	}
 
-	fn to_dummy_midi_event(iter: impl Iterator<Item = crate::midi_message::MidiMessage>) -> impl Iterator<Item = dummy_driver::DummyMidiEvent> {
-		iter.map(|e| dummy_driver::DummyMidiEvent { data: e.data[0..e.datalen as usize].into(), time: e.timestamp })
+	fn to_dummy_midi_event(iter: impl Iterator<Item = MidiMessage>) -> impl Iterator<Item = DummyMidiEvent> {
+		iter.map(|e| DummyMidiEvent { data: e.data[0..e.datalen as usize].into(), time: e.timestamp })
 	}
 
 	#[tokio::test]
 	async fn special_devices_are_created() {
-		let driver = dummy_driver::DummyDriver::new(0,0, 48000);
+		let driver = DummyDriver::new(0,0, 48000);
 		let (_frontend, _events) = launch(driver.clone(), 1000);
 
 		let guard = driver.lock();
@@ -112,7 +115,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn device_creation() {
-		let driver = dummy_driver::DummyDriver::new(0,0, 48000);
+		let driver = DummyDriver::new(0,0, 48000);
 		let (mut frontend, _) = launch(driver.clone(), 1000);
 
 		let aid = frontend.add_device("My Audio Device", 3).expect("Adding audio device failed");
@@ -127,12 +130,12 @@ mod tests {
 		assert_eq!(guard.midi_devices.len(), 2);
 		assert!(guard.audio_devices.contains_key("My Audio Device"));
 		assert!(guard.midi_devices.contains_key("My Midi Device"));
-		assert_eq!(guard.audio_devices.get("My Audio Device").unwrap().record_buffers(&dummy_driver::DummyScope::new()).count(), 3);
+		assert_eq!(guard.audio_devices.get("My Audio Device").unwrap().record_buffers(&DummyScope::new()).count(), 3);
 	}
 
 	#[tokio::test]
 	async fn creating_too_many_devices_fails_gracefully() {
-		let driver = dummy_driver::DummyDriver::new(0,0, 48000);
+		let driver = DummyDriver::new(0,0, 48000);
 		let (mut frontend, _) = launch(driver.clone(), 1000);
 
 		for i in 0..32 {
@@ -150,7 +153,7 @@ mod tests {
 	
 	#[tokio::test]
 	async fn sample_rate_is_reported() {
-		let driver = dummy_driver::DummyDriver::new(0,0, 13337);
+		let driver = DummyDriver::new(0,0, 13337);
 		let (frontend, _) = launch(driver.clone(), 1000);
 		assert_eq!(frontend.sample_rate(), 13337);
 	}
@@ -161,7 +164,7 @@ mod tests {
 			let sample_rate = 48000;
 			let length_samples = sample_rate*length/1000;
 
-			let driver = dummy_driver::DummyDriver::new(0,0, sample_rate);
+			let driver = DummyDriver::new(0,0, sample_rate);
 			let (frontend, _) = launch(driver.clone(), length);
 
 			assert_eq!(frontend.loop_length(), length_samples);
@@ -182,7 +185,7 @@ mod tests {
 	#[tokio::test]
 	async fn midiclock_is_always_active() {
 		for latency in vec![0,256] {
-			let driver = dummy_driver::DummyDriver::new(latency, 0, 96000);
+			let driver = DummyDriver::new(latency, 0, 96000);
 			let (_frontend, _) = launch(driver.clone(), 1000);
 			driver.process_for(48000, 128);
 			let d = driver.lock();
@@ -200,7 +203,7 @@ mod tests {
 	#[tokio::test]
 	async fn midiclock_reacts_to_set_loop_length() {
 		for latency in vec![0,64] {
-			let driver = dummy_driver::DummyDriver::new(latency, 0, 96000);
+			let driver = DummyDriver::new(latency, 0, 96000);
 			let (mut frontend, _) = launch(driver.clone(), 1000);
 			frontend.set_loop_length(48000, 8).unwrap();
 			driver.process_for(48000, 128);
@@ -218,22 +221,20 @@ mod tests {
 
 	#[tokio::test]
 	async fn metronome_is_always_active_and_reacts_to_set_loop_length() {
-		use super::testutils;
-		let driver = dummy_driver::DummyDriver::new(2048, 0, 48000);
+		let driver = DummyDriver::new(2048, 0, 48000);
 		let (mut frontend, _) = launch(driver.clone(), 1337);
 		frontend.set_loop_length(480000, 8).unwrap();
 		driver.process_for(480000, 128);
 		let d = driver.lock();
 		let dev = d.audio_devices.get("metronome").unwrap().lock().unwrap();
-		let ticks = testutils::ticks(&dev.playback_buffers[0], 0.24);
+		let ticks = ticks(&dev.playback_buffers[0], 0.24);
 		assert_eq!(ticks.len(), 8);
 		assert_eq!(*ticks.last().unwrap(), 480000-2048)
 	}
 
 	#[tokio::test]
 	async fn restart_midi_transport() {
-		use crate::midi_message::MidiMessage;
-		let driver = dummy_driver::DummyDriver::new(2048, 0, 44100);
+		let driver = DummyDriver::new(2048, 0, 44100);
 		let (mut frontend, _) = launch(driver.clone(), 1000);
 
 		let id = frontend.add_mididevice("mididev").unwrap();
@@ -249,23 +250,23 @@ mod tests {
 		]);
 	}
 
-	fn fill_audio_device(driver: &dummy_driver::DummyDriver, name: &str, length: usize) {
+	fn fill_audio_device(driver: &DummyDriver, name: &str, length: usize) {
 		let d = driver.lock();
 		let mut dev = d.audio_devices.get(name).unwrap().lock().unwrap();
 		dev.capture_buffers[0] = (0..length).map(|x| x as f32).collect();
 		dev.capture_buffers[1] = (0..length).map(|x| -(x as f32)).collect();
 	}
 
-	fn fill_midi_device(driver: &dummy_driver::DummyDriver, name: &str, length: usize) {
+	fn fill_midi_device(driver: &DummyDriver, name: &str, length: usize) {
 		let d = driver.lock();
 		let mut dev = d.midi_devices.get(name).unwrap().lock().unwrap();
 		for (i,time) in (0..=(length as u32 - 11025)).step_by(11025).enumerate() {
 			let note = ((42 + i) % 128) as u8;
-			dev.incoming_events.push(dummy_driver::DummyMidiEvent {
+			dev.incoming_events.push(DummyMidiEvent {
 				data: smallvec![0x90, note, 96],
 				time
 			});
-			dev.incoming_events.push(dummy_driver::DummyMidiEvent {
+			dev.incoming_events.push(DummyMidiEvent {
 				data: smallvec![0x80, note, 96],
 				time: time + 5512
 			});
@@ -274,7 +275,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn audio_echo_can_be_enabled_and_disabled() {
-		let driver = dummy_driver::DummyDriver::new(0, 0, 44100);
+		let driver = DummyDriver::new(0, 0, 44100);
 		let (mut frontend, _) = launch(driver.clone(), 1000);
 		let id = frontend.add_device("audiodev", 2).unwrap();
 		fill_audio_device(&driver, "audiodev", 89000);
@@ -299,7 +300,7 @@ mod tests {
 	#[tokio::test]
 	async fn timestamp_events_are_sent() {
 		for chunksize in vec![256, 100] {
-			let driver = dummy_driver::DummyDriver::new(0, 0, 44100);
+			let driver = DummyDriver::new(0, 0, 44100);
 			let (_frontend, mut events) = launch(driver.clone(), 1000);
 
 			driver.process_for(44100*4+2*chunksize, chunksize);
@@ -313,8 +314,8 @@ mod tests {
 
 	/// Checks if the next element in the event queue is `required_event`, ignoring all Timestamp events
 	/// on the way. Fails if a different or no element was found after 1 second.
-	async fn assert_receive(events: &mut crate::realtime_send_queue::Consumer<Event>, required_event: &Event) {
-		async fn wait_for(events: &mut crate::realtime_send_queue::Consumer<Event>, required_event: &Event) {
+	async fn assert_receive(events: &mut realtime_send_queue::Consumer<Event>, required_event: &Event) {
+		async fn wait_for(events: &mut realtime_send_queue::Consumer<Event>, required_event: &Event) {
 			loop {
 				let ev = events.receive().await;
 				if ev == *required_event {
@@ -337,7 +338,7 @@ mod tests {
 			// finish_late controls whether the take is finished before its actual end, or finished retroactively afterwards.
 			for (on_point_offset, finish_late) in vec![(0, false) , (5, false), (0, true)] {
 				println!("on_point_offset = {}; finish_late = {};", on_point_offset, finish_late);
-				let driver = dummy_driver::DummyDriver::new(0, 0, 44100);
+				let driver = DummyDriver::new(0, 0, 44100);
 				let (mut frontend, mut events) = launch(driver.clone(), 1000);
 				frontend.set_loop_length(44100,4).unwrap();
 				let dev_id = $setup_device(&mut frontend, &driver);
@@ -377,12 +378,12 @@ mod tests {
 	#[tokio::test]
 	async fn audio_takes_can_be_recorded() {
 		recording_test!(add_audiotake, finish_audiotake, AudioTakeStateChanged,
-			setup_device: |frontend: &mut FrontendThreadState<dummy_driver::DummyDriver>, driver| {
+			setup_device: |frontend: &mut FrontendThreadState<DummyDriver>, driver| {
 				let id = frontend.add_device("dev", 2).unwrap();
 				fill_audio_device(driver, "dev", 44100*8);
 				id
 			},
-			check: |driver: &dummy_driver::DummyDriver, late_offset, capture_begin, playback_begin| {
+			check: |driver: &DummyDriver, late_offset, capture_begin, playback_begin| {
 				let d = driver.lock();
 				let dev = d.audio_devices.get("dev").unwrap().lock().unwrap();
 				for channel in 0..=1 {
@@ -399,12 +400,12 @@ mod tests {
 	#[tokio::test]
 	async fn midi_takes_can_be_recorded() {
 		recording_test!(add_miditake, finish_miditake, MidiTakeStateChanged,
-			setup_device: |frontend: &mut FrontendThreadState<dummy_driver::DummyDriver>, driver: &dummy_driver::DummyDriver| {
+			setup_device: |frontend: &mut FrontendThreadState<DummyDriver>, driver: &DummyDriver| {
 				let id = frontend.add_mididevice("dev").unwrap();
 				fill_midi_device(driver, "dev", 44100*8);
 				id
 			},
-			check: |driver: &dummy_driver::DummyDriver, late_offset, capture_begin, playback_begin| {
+			check: |driver: &DummyDriver, late_offset, capture_begin, playback_begin| {
 				let d = driver.lock();
 				let dev = d.midi_devices.get("dev").unwrap().lock().unwrap();
 				let reference : Vec<_> = midi_events_in_range(dev.incoming_events.iter().cloned(), capture_begin..capture_begin+88200).collect();
@@ -424,7 +425,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn midi_takes_capture_held_notes() {
-		let driver = dummy_driver::DummyDriver::new(0, 0, 44100);
+		let driver = DummyDriver::new(0, 0, 44100);
 		let (mut frontend, _) = launch(driver.clone(), 1000);
 		frontend.set_loop_length(10000,4).unwrap();
 		let dev_id = frontend.add_mididevice("dev").unwrap();
@@ -432,11 +433,11 @@ mod tests {
 		{
 			let d = driver.lock();
 			let mut dev = d.midi_devices.get("dev").unwrap().lock().unwrap();
-			dev.incoming_events.push(dummy_driver::DummyMidiEvent {
+			dev.incoming_events.push(DummyMidiEvent {
 				data: smallvec![0x90, 42, 92],
 				time: 1337
 			});
-			dev.incoming_events.push(dummy_driver::DummyMidiEvent {
+			dev.incoming_events.push(DummyMidiEvent {
 				data: smallvec![0x80, 42, 55],
 				time: 14200
 			});
@@ -450,12 +451,12 @@ mod tests {
 		let d = driver.lock();
 		let dev = d.midi_devices.get("dev").unwrap().lock().unwrap();
 		assert_eq!(dev.committed, vec![
-			crate::midi_message::MidiMessage {
+			MidiMessage {
 				timestamp: 20000,
 				data: [0x90, 42, 92],
 				datalen: 3
 			},
-			crate::midi_message::MidiMessage {
+			MidiMessage {
 				timestamp: 24200,
 				data: [0x80, 42, 55],
 				datalen: 3
@@ -467,7 +468,7 @@ mod tests {
 	async fn latency_compensation() {
 		let playback_latency = 64;
 		let capture_latency = 128;
-		let driver = dummy_driver::DummyDriver::new(playback_latency as u32, capture_latency as u32, 44100);
+		let driver = DummyDriver::new(playback_latency as u32, capture_latency as u32, 44100);
 		let (mut frontend, _) = launch(driver.clone(), 1000);
 		frontend.set_loop_length(44100,4).unwrap();
 		let audiodev_id = frontend.add_device("audiodev", 2).unwrap();
@@ -476,11 +477,11 @@ mod tests {
 		{ // fill midi device
 			let d = driver.lock();
 			let mut dev = d.midi_devices.get("mididev").unwrap().lock().unwrap();
-			dev.incoming_events.push(dummy_driver::DummyMidiEvent {
+			dev.incoming_events.push(DummyMidiEvent {
 				data: smallvec![0x90, 42, 92],
 				time: 1000
 			});
-			dev.incoming_events.push(dummy_driver::DummyMidiEvent {
+			dev.incoming_events.push(DummyMidiEvent {
 				data: smallvec![0x80, 42, 55],
 				time: 2000
 			});
@@ -506,12 +507,12 @@ mod tests {
 		{ // check midi
 			let dev = d.midi_devices.get("mididev").unwrap().lock().unwrap();
 			assert_eq!(dev.committed[0..2], vec![
-				crate::midi_message::MidiMessage {
+				MidiMessage {
 					timestamp: 44100 + 1000 - (playback_latency + capture_latency) as u32,
 					data: [0x90, 42, 92],
 					datalen: 3
 				},
-				crate::midi_message::MidiMessage {
+				MidiMessage {
 					timestamp: 44100 + 2000 - (playback_latency + capture_latency) as u32,
 					data: [0x80, 42, 55],
 					datalen: 3
@@ -522,7 +523,7 @@ mod tests {
 
 	macro_rules! mute_test {
 		($add_take:ident, $finish_take:ident, $set_unmuted:ident, setup_device: $setup_device:expr) => {{
-			let driver = dummy_driver::DummyDriver::new(0, 0, 44100);
+			let driver = DummyDriver::new(0, 0, 44100);
 			let (mut frontend, _) = launch(driver.clone(), 1000);
 			frontend.set_loop_length(44100,4).unwrap();
 			let dev_id = $setup_device(&mut frontend, &driver);
@@ -546,7 +547,7 @@ mod tests {
 	#[tokio::test]
 	async fn audio_takes_can_be_muted_and_unmuted() {
 		let driver = mute_test!(add_audiotake, finish_audiotake, set_audiotake_unmuted,
-			setup_device: |frontend: &mut FrontendThreadState<dummy_driver::DummyDriver>, driver| {
+			setup_device: |frontend: &mut FrontendThreadState<DummyDriver>, driver| {
 				let dev_id = frontend.add_device("dev", 2).unwrap();
 				fill_audio_device(driver, "dev", 44100*8);
 				dev_id
@@ -565,7 +566,7 @@ mod tests {
 	#[tokio::test]
 	async fn midi_takes_can_be_muted_and_unmuted() {
 		let driver = mute_test!(add_miditake, finish_miditake, set_miditake_unmuted,
-			setup_device: |frontend: &mut FrontendThreadState<dummy_driver::DummyDriver>, driver| {
+			setup_device: |frontend: &mut FrontendThreadState<DummyDriver>, driver| {
 				let dev_id = frontend.add_mididevice("dev").unwrap();
 				fill_midi_device(driver, "dev", 44100*8);
 				dev_id
