@@ -436,17 +436,20 @@ macro_rules! recording_test {
 	}
 	
 	fn assert_iter_eq<T: PartialEq + std::fmt::Debug>(mut iter1: impl Iterator<Item=T>, mut iter2: impl Iterator<Item=T>) {
+		let mut i = 0;
 		loop {
 			let v1 = iter1.next();
 			let v2 = iter2.next();
 			match (v1.is_some(), v2.is_some()) {
-				(false, false) => return,
+				(false, false) => break,
 				(true, false) => panic!("First list is longer than the second"),
 				(false, true) => panic!("Second list is longer than the first"),
 				(true, true) => {}
 			};
 			assert_eq!(v1.unwrap(), v2.unwrap());
+			i += 1;
 		}
+		assert!(i > 0, "assert_iter_eq fails when both lists are empty");
 	}
 
 	fn midi_events_in_range(iter: impl Iterator<Item = dummy_driver::DummyMidiEvent>, range: std::ops::Range<u32>) -> impl Iterator<Item = dummy_driver::DummyMidiEvent> {
@@ -553,5 +556,30 @@ macro_rules! mute_test {
 		assert_sleq!(dev.playback_buffers[0][5*t..6*t], dev.capture_buffers[0][3*t..4*t], "unmuted part of first repetition was not played correctly");
 		assert_sleq!(dev.playback_buffers[0][6*t..7*t], dev.capture_buffers[0][2*t..3*t], "unmuted part of second repetition was not played correctly");
 		assert_sleq!(dev.playback_buffers[0][7*t..8*t], 0.0, "expected silence when muted");
+	}
+
+	#[tokio::test]
+	async fn midi_takes_can_be_muted_and_unmuted() {
+		let driver = mute_test!(add_miditake, finish_miditake, set_miditake_unmuted,
+			setup_device: |frontend: &mut FrontendThreadState<dummy_driver::DummyDriver>, driver| {
+				let dev_id = frontend.add_mididevice("dev").unwrap();
+				fill_midi_device(driver, "dev", 44100*8);
+				dev_id
+			}
+		);
+		
+		let d = driver.lock();
+		let dev = d.midi_devices.get("dev").unwrap().lock().unwrap();
+		let t = 22050;
+		assert_eq!(midi_events_in_range(to_dummy_midi_event(dev.committed.iter().cloned()), 4*t..5*t).count(), 0, "expected silence when muted");
+		assert_iter_eq(
+			midi_events_in_range(dev.incoming_events.iter().cloned(), 3*t..4*t),
+			midi_events_in_range(to_dummy_midi_event(dev.committed.iter().cloned()), 5*t..6*t)
+		);
+		assert_iter_eq(
+			midi_events_in_range(dev.incoming_events.iter().cloned(), 2*t..3*t),
+			midi_events_in_range(to_dummy_midi_event(dev.committed.iter().cloned()), 6*t..7*t)
+		);
+		assert_eq!(midi_events_in_range(to_dummy_midi_event(dev.committed.iter().cloned()), 7*t..8*t).count(), 0, "expected silence when muted");
 	}
 }
