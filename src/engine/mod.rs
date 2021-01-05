@@ -13,6 +13,7 @@ mod driver_traits;
 #[cfg(test)]
 mod dummy_driver;
 #[cfg(test)]
+#[macro_use]
 mod testutils;
 
 use backend::*;
@@ -83,59 +84,19 @@ pub fn launch<Driver: DriverTrait>(driver: Driver, loop_length_msec: u32) -> (Fr
 mod tests {
 	use super::*;
 	use tokio;
-	use std::sync::{Arc,Mutex};
 	use smallvec::smallvec;
+	use testutils::*;
 
-// GRCOV_EXCL_START
-	fn slice_diff<T: PartialEq + std::fmt::Debug>(lhs: &[T], rhs: &[T]) {
-		if let Some(result) = lhs.iter().zip(rhs.iter()).map(|x| x.0 != x.1).enumerate().find(|t| t.1) {
-			let index = result.0;
-			let max = std::cmp::max(lhs.len(), rhs.len());
-			let lo = if index < 10 { 0 } else { index-10 };
-			let hi = if index + 10 >= max { max } else { index+10 };
-
-			println!("First difference at {}, context: {:?} != {:?}", index, &lhs[lo..hi], &rhs[lo..hi]);
-		}
+	fn midi_events_in_range(iter: impl Iterator<Item = dummy_driver::DummyMidiEvent>, range: std::ops::Range<u32>) -> impl Iterator<Item = dummy_driver::DummyMidiEvent> {
+		let start = range.start;
+		iter
+			.filter(move |e| range.contains(&e.time))
+			.map(move |e| dummy_driver::DummyMidiEvent { data: e.data.clone(), time: e.time - start })
 	}
 
-	/// Asserts two (large) slices are equal. Prints a small context around the first
-	/// difference, if unequal
-	macro_rules! assert_sleq {
-		($lhs:expr, 0.0) => {{
-			let lhs = &$lhs;
-			let rhs = &vec![0.0; lhs.len()];
-			if *lhs != *rhs {
-				slice_diff(lhs, rhs);
-				panic!("Slices are different!");
-			}
-		}};
-		($lhs:expr, 0.0, $reason:expr) => {{
-			let lhs = &$lhs;
-			let rhs = &vec![0.0; lhs.len()];
-			if *lhs != *rhs {
-				slice_diff(lhs, rhs);
-				panic!($reason);
-			}
-		}};
-		($lhs:expr, $rhs:expr) => {{
-			let lhs = &$lhs;
-			let rhs = &$rhs;
-			if *lhs != *rhs {
-				slice_diff(lhs, rhs);
-				panic!("Slices are different!");
-			}
-		}};
-		($lhs:expr, $rhs:expr, $reason:expr) => {{
-			let lhs = &$lhs;
-			let rhs = &$rhs;
-			if *lhs != *rhs {
-				slice_diff(lhs, rhs);
-				panic!($reason);
-			}
-		}}
+	fn to_dummy_midi_event(iter: impl Iterator<Item = crate::midi_message::MidiMessage>) -> impl Iterator<Item = dummy_driver::DummyMidiEvent> {
+		iter.map(|e| dummy_driver::DummyMidiEvent { data: e.data[0..e.datalen as usize].into(), time: e.timestamp })
 	}
-// GRCOV_EXCL_STOP
-
 
 	#[tokio::test]
 	async fn special_devices_are_created() {
@@ -370,48 +331,48 @@ mod tests {
 		assert!(result.is_ok(), "Expected event {:?} was not received after 1 sec.", required_event);
 	}
 
-macro_rules! recording_test {
-	($add_take:ident, $finish_take:ident, $TakeStateChanged:ident, setup_device: $setup_device:expr, check: $check:expr) => {{
-		// on_point_offset controls whether loop points align with chunk boundaries (=0) or not (>0 and < chunksize).
-		// finish_late controls whether the take is finished before its actual end, or finished retroactively afterwards.
-		for (on_point_offset, finish_late) in vec![(0, false) , (5, false), (0, true)] {
-			println!("on_point_offset = {}; finish_late = {};", on_point_offset, finish_late);
-			let driver = dummy_driver::DummyDriver::new(0, 0, 44100);
-			let (mut frontend, mut events) = launch(driver.clone(), 1000);
-			frontend.set_loop_length(44100,4).unwrap();
-			let dev_id = $setup_device(&mut frontend, &driver);
+	macro_rules! recording_test {
+		($add_take:ident, $finish_take:ident, $TakeStateChanged:ident, setup_device: $setup_device:expr, check: $check:expr) => {{
+			// on_point_offset controls whether loop points align with chunk boundaries (=0) or not (>0 and < chunksize).
+			// finish_late controls whether the take is finished before its actual end, or finished retroactively afterwards.
+			for (on_point_offset, finish_late) in vec![(0, false) , (5, false), (0, true)] {
+				println!("on_point_offset = {}; finish_late = {};", on_point_offset, finish_late);
+				let driver = dummy_driver::DummyDriver::new(0, 0, 44100);
+				let (mut frontend, mut events) = launch(driver.clone(), 1000);
+				frontend.set_loop_length(44100,4).unwrap();
+				let dev_id = $setup_device(&mut frontend, &driver);
 
-			// add a take during the first period
-			driver.process_for(30000, 128);
-			let take_id = frontend.$add_take(dev_id, true).unwrap();
-			driver.process_for(14100 + on_point_offset, 128);
-			assert_receive(&mut events, &Event::$TakeStateChanged(dev_id, take_id, RecordState::Recording, 44100)).await;
-			
-			if !finish_late {
-				// let it record for the second and third period; finish recording during the third
-				driver.process_for(70000 - on_point_offset, 128);
-				frontend.$finish_take(dev_id, take_id, 88200).unwrap();
-				driver.process_for(18200 + on_point_offset, 128);
-				assert_receive(&mut events, &Event::$TakeStateChanged(dev_id, take_id, RecordState::Finished, 44100+88200)).await;
+				// add a take during the first period
+				driver.process_for(30000, 128);
+				let take_id = frontend.$add_take(dev_id, true).unwrap();
+				driver.process_for(14100 + on_point_offset, 128);
+				assert_receive(&mut events, &Event::$TakeStateChanged(dev_id, take_id, RecordState::Recording, 44100)).await;
+				
+				if !finish_late {
+					// let it record for the second and third period; finish recording during the third
+					driver.process_for(70000 - on_point_offset, 128);
+					frontend.$finish_take(dev_id, take_id, 88200).unwrap();
+					driver.process_for(18200 + on_point_offset, 128);
+					assert_receive(&mut events, &Event::$TakeStateChanged(dev_id, take_id, RecordState::Finished, 44100+88200)).await;
+				}
+				else {
+					// let it record for the second and third period and a bit of the fourth period, then retroactively finish
+					driver.process_for(88200 + 300, 128);
+					frontend.$finish_take(dev_id, take_id, 88200).unwrap();
+					driver.process_for(33, 128);
+					assert_receive(&mut events, &Event::$TakeStateChanged(dev_id, take_id, RecordState::Finished, 44100+88200)).await;
+				}
+				// let it play for (at least) four periods, i.e. two repetitions
+				driver.process_for(2*88200 - on_point_offset, 128);
+
+				let late_offset = if finish_late { 300 } else { 0 };
+				let capture_begin = 44100;
+				let playback_begin = capture_begin + 88200;
+
+				$check(&driver, late_offset, capture_begin, playback_begin);
 			}
-			else {
-				// let it record for the second and third period and a bit of the fourth period, then retroactively finish
-				driver.process_for(88200 + 300, 128);
-				frontend.$finish_take(dev_id, take_id, 88200).unwrap();
-				driver.process_for(33, 128);
-				assert_receive(&mut events, &Event::$TakeStateChanged(dev_id, take_id, RecordState::Finished, 44100+88200)).await;
-			}
-			// let it play for (at least) four periods, i.e. two repetitions
-			driver.process_for(2*88200 - on_point_offset, 128);
-
-			let late_offset = if finish_late { 300 } else { 0 };
-			let capture_begin = 44100;
-			let playback_begin = capture_begin + 88200;
-
-			$check(&driver, late_offset, capture_begin, playback_begin);
-		}
-	}}
-}
+		}}
+	}
 
 	#[tokio::test]
 	async fn audio_takes_can_be_recorded() {
@@ -433,36 +394,6 @@ macro_rules! recording_test {
 				}
 			}
 		);
-	}
-	
-// GRCOV_EXCL_START
-	fn assert_iter_eq<T: PartialEq + std::fmt::Debug>(mut iter1: impl Iterator<Item=T>, mut iter2: impl Iterator<Item=T>) {
-		let mut i = 0;
-		loop {
-			let v1 = iter1.next();
-			let v2 = iter2.next();
-			match (v1.is_some(), v2.is_some()) {
-				(false, false) => break,
-				(true, false) => panic!("First list is longer than the second"),
-				(false, true) => panic!("Second list is longer than the first"),
-				(true, true) => {}
-			};
-			assert_eq!(v1.unwrap(), v2.unwrap());
-			i += 1;
-		}
-		assert!(i > 0, "assert_iter_eq fails when both lists are empty");
-	}
-// GRCOV_EXCL_STOP
-
-	fn midi_events_in_range(iter: impl Iterator<Item = dummy_driver::DummyMidiEvent>, range: std::ops::Range<u32>) -> impl Iterator<Item = dummy_driver::DummyMidiEvent> {
-		let start = range.start;
-		iter
-			.filter(move |e| range.contains(&e.time))
-			.map(move |e| dummy_driver::DummyMidiEvent { data: e.data.clone(), time: e.time - start })
-	}
-	
-	fn to_dummy_midi_event(iter: impl Iterator<Item = crate::midi_message::MidiMessage>) -> impl Iterator<Item = dummy_driver::DummyMidiEvent> {
-		iter.map(|e| dummy_driver::DummyMidiEvent { data: e.data[0..e.datalen as usize].into(), time: e.timestamp })
 	}
 
 	#[tokio::test]
@@ -489,6 +420,47 @@ macro_rules! recording_test {
 				);
 			}
 		);
+	}
+
+	#[tokio::test]
+	async fn midi_takes_capture_held_notes() {
+		let driver = dummy_driver::DummyDriver::new(0, 0, 44100);
+		let (mut frontend, _) = launch(driver.clone(), 1000);
+		frontend.set_loop_length(10000,4).unwrap();
+		let dev_id = frontend.add_mididevice("dev").unwrap();
+		
+		{
+			let d = driver.lock();
+			let mut dev = d.midi_devices.get("dev").unwrap().lock().unwrap();
+			dev.incoming_events.push(dummy_driver::DummyMidiEvent {
+				data: smallvec![0x90, 42, 92],
+				time: 1337
+			});
+			dev.incoming_events.push(dummy_driver::DummyMidiEvent {
+				data: smallvec![0x80, 42, 55],
+				time: 14200
+			});
+		}
+
+		driver.process_for(5000, 128); // not capturing, but a note has been played
+		let take_id = frontend.add_miditake(dev_id, true).unwrap();
+		frontend.finish_miditake(dev_id, take_id, 10000).unwrap();
+		driver.process_for(25000, 128); // capture will start, complete and the first iteration will be played back
+
+		let d = driver.lock();
+		let dev = d.midi_devices.get("dev").unwrap().lock().unwrap();
+		assert_eq!(dev.committed, vec![
+			crate::midi_message::MidiMessage {
+				timestamp: 20000,
+				data: [0x90, 42, 92],
+				datalen: 3
+			},
+			crate::midi_message::MidiMessage {
+				timestamp: 24200,
+				data: [0x80, 42, 55],
+				datalen: 3
+			},
+		]);
 	}
 	
 	#[tokio::test]
@@ -548,28 +520,28 @@ macro_rules! recording_test {
 		}
 	}
 
-macro_rules! mute_test {
-	($add_take:ident, $finish_take:ident, $set_unmuted:ident, setup_device: $setup_device:expr) => {{
-		let driver = dummy_driver::DummyDriver::new(0, 0, 44100);
-		let (mut frontend, _) = launch(driver.clone(), 1000);
-		frontend.set_loop_length(44100,4).unwrap();
-		let dev_id = $setup_device(&mut frontend, &driver);
+	macro_rules! mute_test {
+		($add_take:ident, $finish_take:ident, $set_unmuted:ident, setup_device: $setup_device:expr) => {{
+			let driver = dummy_driver::DummyDriver::new(0, 0, 44100);
+			let (mut frontend, _) = launch(driver.clone(), 1000);
+			frontend.set_loop_length(44100,4).unwrap();
+			let dev_id = $setup_device(&mut frontend, &driver);
 
-		driver.process_for(22050, 128); // not capturing
-		let take_id = frontend.$add_take(dev_id, false).unwrap();
-		frontend.$finish_take(dev_id, take_id, 44100).unwrap();
-		driver.process_for(22050, 128); // not capturing
-		driver.process_for(44100, 128); // capturing
+			driver.process_for(22050, 128); // not capturing
+			let take_id = frontend.$add_take(dev_id, false).unwrap();
+			frontend.$finish_take(dev_id, take_id, 44100).unwrap();
+			driver.process_for(22050, 128); // not capturing
+			driver.process_for(44100, 128); // capturing
 
-		driver.process_for(22050, 128); // playback, muted
-		frontend.$set_unmuted(dev_id, take_id, true).unwrap();
-		driver.process_for(44100, 128); // playback, unmuted
-		frontend.$set_unmuted(dev_id, take_id, false).unwrap();
-		driver.process_for(22050, 128); // playback, muted
+			driver.process_for(22050, 128); // playback, muted
+			frontend.$set_unmuted(dev_id, take_id, true).unwrap();
+			driver.process_for(44100, 128); // playback, unmuted
+			frontend.$set_unmuted(dev_id, take_id, false).unwrap();
+			driver.process_for(22050, 128); // playback, muted
 
-		driver
-	}}
-}
+			driver
+		}}
+	}
 
 	#[tokio::test]
 	async fn audio_takes_can_be_muted_and_unmuted() {
@@ -613,46 +585,5 @@ macro_rules! mute_test {
 			midi_events_in_range(to_dummy_midi_event(dev.committed.iter().cloned()), 6*t..7*t)
 		);
 		assert_eq!(midi_events_in_range(to_dummy_midi_event(dev.committed.iter().cloned()), 7*t..8*t).count(), 0, "expected silence when muted");
-	}
-
-	#[tokio::test]
-	async fn midi_takes_capture_held_notes() {
-		let driver = dummy_driver::DummyDriver::new(0, 0, 44100);
-		let (mut frontend, _) = launch(driver.clone(), 1000);
-		frontend.set_loop_length(10000,4).unwrap();
-		let dev_id = frontend.add_mididevice("dev").unwrap();
-		
-		{
-			let d = driver.lock();
-			let mut dev = d.midi_devices.get("dev").unwrap().lock().unwrap();
-			dev.incoming_events.push(dummy_driver::DummyMidiEvent {
-				data: smallvec![0x90, 42, 92],
-				time: 1337
-			});
-			dev.incoming_events.push(dummy_driver::DummyMidiEvent {
-				data: smallvec![0x80, 42, 55],
-				time: 14200
-			});
-		}
-
-		driver.process_for(5000, 128); // not capturing, but a note has been played
-		let take_id = frontend.add_miditake(dev_id, true).unwrap();
-		frontend.finish_miditake(dev_id, take_id, 10000).unwrap();
-		driver.process_for(25000, 128); // capture will start, complete and the first iteration will be played back
-
-		let d = driver.lock();
-		let dev = d.midi_devices.get("dev").unwrap().lock().unwrap();
-		assert_eq!(dev.committed, vec![
-			crate::midi_message::MidiMessage {
-				timestamp: 20000,
-				data: [0x90, 42, 92],
-				datalen: 3
-			},
-			crate::midi_message::MidiMessage {
-				timestamp: 24200,
-				data: [0x80, 42, 55],
-				datalen: 3
-			},
-		]);
 	}
 }

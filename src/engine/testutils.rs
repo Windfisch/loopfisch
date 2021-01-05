@@ -69,3 +69,71 @@ pub fn ticks(samples: &[f32], level: f32) -> Vec<usize> {
 	return result;
 }
 
+// GRCOV_EXCL_START
+pub fn slice_diff<T: PartialEq + std::fmt::Debug>(lhs: &[T], rhs: &[T]) {
+	if let Some(result) = lhs.iter().zip(rhs.iter()).map(|x| x.0 != x.1).enumerate().find(|t| t.1) {
+		let index = result.0;
+		let max = std::cmp::max(lhs.len(), rhs.len());
+		let lo = if index < 10 { 0 } else { index-10 };
+		let hi = if index + 10 >= max { max } else { index+10 };
+
+		println!("First difference at {}, context: {:?} != {:?}", index, &lhs[lo..hi], &rhs[lo..hi]);
+	}
+}
+
+/// Asserts two (large) slices are equal. Prints a small context around the first
+/// difference, if unequal
+#[macro_export]
+macro_rules! assert_sleq {
+	($lhs:expr, 0.0) => {{
+		let lhs = &$lhs;
+		let rhs = &vec![0.0; lhs.len()];
+		if *lhs != *rhs {
+			slice_diff(lhs, rhs);
+			panic!("Slices are different!");
+		}
+	}};
+	($lhs:expr, 0.0, $reason:expr) => {{
+		let lhs = &$lhs;
+		let rhs = &vec![0.0; lhs.len()];
+		if *lhs != *rhs {
+			slice_diff(lhs, rhs);
+			panic!($reason);
+		}
+	}};
+	($lhs:expr, $rhs:expr) => {{
+		let lhs = &$lhs;
+		let rhs = &$rhs;
+		if *lhs != *rhs {
+			slice_diff(lhs, rhs);
+			panic!("Slices are different!");
+		}
+	}};
+	($lhs:expr, $rhs:expr, $reason:expr) => {{
+		let lhs = &$lhs;
+		let rhs = &$rhs;
+		if *lhs != *rhs {
+			slice_diff(lhs, rhs);
+			panic!($reason);
+		}
+	}}
+}
+
+pub fn assert_iter_eq<T: PartialEq + std::fmt::Debug>(mut iter1: impl Iterator<Item=T>, mut iter2: impl Iterator<Item=T>) {
+	let mut i = 0;
+	loop {
+		let v1 = iter1.next();
+		let v2 = iter2.next();
+		match (v1.is_some(), v2.is_some()) {
+			(false, false) => break,
+			(true, false) => panic!("First list is longer than the second"),
+			(false, true) => panic!("Second list is longer than the first"),
+			(true, true) => {}
+		};
+		assert_eq!(v1.unwrap(), v2.unwrap());
+		i += 1;
+	}
+	assert!(i > 0, "assert_iter_eq fails when both lists are empty");
+}
+// GRCOV_EXCL_STOP
+
