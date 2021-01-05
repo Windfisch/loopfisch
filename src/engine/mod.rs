@@ -371,7 +371,7 @@ mod tests {
 	}
 
 macro_rules! recording_test {
-	($add_take:ident, $finish_take:ident, $TakeStateChanged:ident, add_device: $add_device:expr, setup: $setup:expr, check: $check:expr) => {{
+	($add_take:ident, $finish_take:ident, $TakeStateChanged:ident, setup_device: $setup_device:expr, check: $check:expr) => {{
 		// on_point_offset controls whether loop points align with chunk boundaries (=0) or not (>0 and < chunksize).
 		// finish_late controls whether the take is finished before its actual end, or finished retroactively afterwards.
 		for (on_point_offset, finish_late) in vec![(0, false) , (5, false), (0, true)] {
@@ -379,8 +379,7 @@ macro_rules! recording_test {
 			let driver = dummy_driver::DummyDriver::new(0, 0, 44100);
 			let (mut frontend, mut events) = launch(driver.clone(), 1000);
 			frontend.set_loop_length(44100,4).unwrap();
-			let dev_id = $add_device(&mut frontend).unwrap();
-			$setup(&driver);
+			let dev_id = $setup_device(&mut frontend, &driver);
 
 			// add a take during the first period
 			driver.process_for(30000, 128);
@@ -417,11 +416,10 @@ macro_rules! recording_test {
 	#[tokio::test]
 	async fn audio_takes_can_be_recorded() {
 		recording_test!(add_audiotake, finish_audiotake, AudioTakeStateChanged,
-			add_device: |frontend: &mut FrontendThreadState<dummy_driver::DummyDriver>| {
-				frontend.add_device("dev", 2)
-			},
-			setup: |driver| {
+			setup_device: |frontend: &mut FrontendThreadState<dummy_driver::DummyDriver>, driver| {
+				let id = frontend.add_device("dev", 2).unwrap();
 				fill_audio_device(driver, "dev", 44100*8);
+				id
 			},
 			check: |driver: &dummy_driver::DummyDriver, late_offset, capture_begin, playback_begin| {
 				let d = driver.lock();
@@ -465,11 +463,10 @@ macro_rules! recording_test {
 	#[tokio::test]
 	async fn midi_takes_can_be_recorded() {
 		recording_test!(add_miditake, finish_miditake, MidiTakeStateChanged,
-			add_device: |frontend: &mut FrontendThreadState<dummy_driver::DummyDriver>| {
-				frontend.add_mididevice("dev")
-			},
-			setup: |driver: &dummy_driver::DummyDriver| {
+			setup_device: |frontend: &mut FrontendThreadState<dummy_driver::DummyDriver>, driver: &dummy_driver::DummyDriver| {
+				let id = frontend.add_mididevice("dev").unwrap();
 				fill_midi_device(driver, "dev", 44100*8);
+				id
 			},
 			check: |driver: &dummy_driver::DummyDriver, late_offset, capture_begin, playback_begin| {
 				let d = driver.lock();
@@ -516,28 +513,41 @@ macro_rules! recording_test {
 		// TODO FIXME: test for midi takes
 	}
 
-	#[tokio::test]
-	async fn audio_takes_can_be_muted_and_unmuted() {
+macro_rules! mute_test {
+	($add_take:ident, $finish_take:ident, $set_unmuted:ident, setup_device: $setup_device:expr) => {{
 		let driver = dummy_driver::DummyDriver::new(0, 0, 44100);
 		let (mut frontend, _) = launch(driver.clone(), 1000);
 		frontend.set_loop_length(44100,4).unwrap();
-		let dev_id = frontend.add_device("audiodev", 2).unwrap();
-		fill_audio_device(&driver, "audiodev", 44100*8);
+		let dev_id = $setup_device(&mut frontend, &driver);
 
 		driver.process_for(22050, 128); // not capturing
-		let take_id = frontend.add_audiotake(dev_id, false).unwrap();
-		frontend.finish_audiotake(dev_id, take_id, 44100).unwrap();
+		let take_id = frontend.$add_take(dev_id, false).unwrap();
+		frontend.$finish_take(dev_id, take_id, 44100).unwrap();
 		driver.process_for(22050, 128); // not capturing
 		driver.process_for(44100, 128); // capturing
 
 		driver.process_for(22050, 128); // playback, muted
-		frontend.set_audiotake_unmuted(dev_id, take_id, true).unwrap();
+		frontend.$set_unmuted(dev_id, take_id, true).unwrap();
 		driver.process_for(44100, 128); // playback, unmuted
-		frontend.set_audiotake_unmuted(dev_id, take_id, false).unwrap();
+		frontend.$set_unmuted(dev_id, take_id, false).unwrap();
 		driver.process_for(22050, 128); // playback, muted
+
+		driver
+	}}
+}
+
+	#[tokio::test]
+	async fn audio_takes_can_be_muted_and_unmuted() {
+		let driver = mute_test!(add_audiotake, finish_audiotake, set_audiotake_unmuted,
+			setup_device: |frontend: &mut FrontendThreadState<dummy_driver::DummyDriver>, driver| {
+				let dev_id = frontend.add_device("dev", 2).unwrap();
+				fill_audio_device(driver, "dev", 44100*8);
+				dev_id
+			}
+		);
 			
 		let d = driver.lock();
-		let dev = d.audio_devices.get("audiodev").unwrap().lock().unwrap();
+		let dev = d.audio_devices.get("dev").unwrap().lock().unwrap();
 		let t = 22050;
 		assert_sleq!(dev.playback_buffers[0][4*t..5*t], 0.0, "expected silence when muted");
 		assert_sleq!(dev.playback_buffers[0][5*t..6*t], dev.capture_buffers[0][3*t..4*t], "unmuted part of first repetition was not played correctly");
