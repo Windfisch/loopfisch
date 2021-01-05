@@ -295,6 +295,22 @@ mod tests {
 		dev.capture_buffers[1] = (0..length).map(|x| -(x as f32)).collect();
 	}
 
+	fn fill_midi_device(driver: &dummy_driver::DummyDriver, name: &str, length: usize) {
+		let d = driver.lock();
+		let mut dev = d.midi_devices.get(name).unwrap().lock().unwrap();
+		for (i,time) in (0..=(length as u32 - 11025)).step_by(11025).enumerate() {
+			let note = ((42 + i) % 128) as u8;
+			dev.incoming_events.push(dummy_driver::DummyMidiEvent {
+				data: smallvec![0x90, note, 96],
+				time
+			});
+			dev.incoming_events.push(dummy_driver::DummyMidiEvent {
+				data: smallvec![0x80, note, 96],
+				time: time + 5512
+			});
+		}
+	}
+
 	#[tokio::test]
 	async fn audio_echo_can_be_enabled_and_disabled() {
 		let driver = dummy_driver::DummyDriver::new(0, 0, 44100);
@@ -354,8 +370,8 @@ mod tests {
 		assert!(result.is_ok(), "Expected event {:?} was not received after 1 sec.", required_event);
 	}
 
-	#[tokio::test]
-	async fn audio_takes_can_be_recorded() {
+macro_rules! recording_test {
+	($add_take:ident, $finish_take:ident, $TakeStateChanged:ident, add_device: $add_device:expr, setup: $setup:expr, check: $check:expr) => {{
 		// on_point_offset controls whether loop points align with chunk boundaries (=0) or not (>0 and < chunksize).
 		// finish_late controls whether the take is finished before its actual end, or finished retroactively afterwards.
 		for (on_point_offset, finish_late) in vec![(0, false) , (5, false), (0, true)] {
@@ -363,45 +379,114 @@ mod tests {
 			let driver = dummy_driver::DummyDriver::new(0, 0, 44100);
 			let (mut frontend, mut events) = launch(driver.clone(), 1000);
 			frontend.set_loop_length(44100,4).unwrap();
-			let dev_id = frontend.add_device("audiodev", 2).unwrap();
-			fill_audio_device(&driver, "audiodev", 44100*8);
+			let dev_id = $add_device(&mut frontend).unwrap();
+			$setup(&driver);
 
 			// add a take during the first period
 			driver.process_for(30000, 128);
-			let take_id = frontend.add_audiotake(dev_id, true).unwrap();
+			let take_id = frontend.$add_take(dev_id, true).unwrap();
 			driver.process_for(14100 + on_point_offset, 128);
-			assert_receive(&mut events, &Event::AudioTakeStateChanged(dev_id, take_id, RecordState::Recording, 44100)).await;
+			assert_receive(&mut events, &Event::$TakeStateChanged(dev_id, take_id, RecordState::Recording, 44100)).await;
 			
 			if !finish_late {
 				// let it record for the second and third period; finish recording during the third
 				driver.process_for(70000 - on_point_offset, 128);
-				frontend.finish_audiotake(dev_id, take_id, 88200).unwrap();
+				frontend.$finish_take(dev_id, take_id, 88200).unwrap();
 				driver.process_for(18200 + on_point_offset, 128);
-				assert_receive(&mut events, &Event::AudioTakeStateChanged(dev_id, take_id, RecordState::Finished, 44100+88200)).await;
+				assert_receive(&mut events, &Event::$TakeStateChanged(dev_id, take_id, RecordState::Finished, 44100+88200)).await;
 			}
 			else {
 				// let it record for the second and third period and a bit of the fourth period, then retroactively finish
 				driver.process_for(88200 + 300, 128);
-				frontend.finish_audiotake(dev_id, take_id, 88200).unwrap();
+				frontend.$finish_take(dev_id, take_id, 88200).unwrap();
 				driver.process_for(33, 128);
-				assert_receive(&mut events, &Event::AudioTakeStateChanged(dev_id, take_id, RecordState::Finished, 44100+88200)).await;
+				assert_receive(&mut events, &Event::$TakeStateChanged(dev_id, take_id, RecordState::Finished, 44100+88200)).await;
 			}
 			// let it play for (at least) four periods, i.e. two repetitions
 			driver.process_for(2*88200 - on_point_offset, 128);
 
-			let d = driver.lock();
-			let dev = d.audio_devices.get("audiodev").unwrap().lock().unwrap();
 			let late_offset = if finish_late { 300 } else { 0 };
 			let capture_begin = 44100;
 			let playback_begin = capture_begin + 88200;
-			for channel in 0..=1 {
-				assert_sleq!(dev.playback_buffers[channel][0..playback_begin+late_offset], 0.0, "expected silence at the beginning");
-				assert_sleq!(dev.playback_buffers[channel][playback_begin+late_offset..playback_begin+88200], dev.capture_buffers[channel][capture_begin+late_offset..capture_begin+88200],
-					"first repetition was not played correctly");
-				assert_sleq!(dev.playback_buffers[channel][(playback_begin+88200)..(playback_begin+2*88200)], dev.capture_buffers[channel][capture_begin..capture_begin+88200],
-					"second repetition was not played correctly");
-			}
+
+			$check(&driver, late_offset, capture_begin, playback_begin);
 		}
+	}}
+}
+
+	#[tokio::test]
+	async fn audio_takes_can_be_recorded() {
+		recording_test!(add_audiotake, finish_audiotake, AudioTakeStateChanged,
+			add_device: |frontend: &mut FrontendThreadState<dummy_driver::DummyDriver>| {
+				frontend.add_device("dev", 2)
+			},
+			setup: |driver| {
+				fill_audio_device(driver, "dev", 44100*8);
+			},
+			check: |driver: &dummy_driver::DummyDriver, late_offset, capture_begin, playback_begin| {
+				let d = driver.lock();
+				let dev = d.audio_devices.get("dev").unwrap().lock().unwrap();
+				for channel in 0..=1 {
+					assert_sleq!(dev.playback_buffers[channel][0..playback_begin+late_offset], 0.0, "expected silence at the beginning");
+					assert_sleq!(dev.playback_buffers[channel][playback_begin+late_offset..playback_begin+88200], dev.capture_buffers[channel][capture_begin+late_offset..capture_begin+88200],
+						"first repetition was not played correctly");
+					assert_sleq!(dev.playback_buffers[channel][(playback_begin+88200)..(playback_begin+2*88200)], dev.capture_buffers[channel][capture_begin..capture_begin+88200],
+						"second repetition was not played correctly");
+				}
+			}
+		);
+	}
+	
+	fn assert_iter_eq<T: PartialEq + std::fmt::Debug>(mut iter1: impl Iterator<Item=T>, mut iter2: impl Iterator<Item=T>) {
+		loop {
+			let v1 = iter1.next();
+			let v2 = iter2.next();
+			match (v1.is_some(), v2.is_some()) {
+				(false, false) => return,
+				(true, false) => panic!("First list is longer than the second"),
+				(false, true) => panic!("Second list is longer than the first"),
+				(true, true) => {}
+			};
+			assert_eq!(v1.unwrap(), v2.unwrap());
+		}
+	}
+
+	fn midi_events_in_range(iter: impl Iterator<Item = dummy_driver::DummyMidiEvent>, range: std::ops::Range<u32>) -> impl Iterator<Item = dummy_driver::DummyMidiEvent> {
+		let start = range.start;
+		iter
+			.filter(move |e| range.contains(&e.time))
+			.map(move |e| dummy_driver::DummyMidiEvent { data: e.data.clone(), time: e.time - start })
+	}
+	
+	fn to_dummy_midi_event(iter: impl Iterator<Item = crate::midi_message::MidiMessage>) -> impl Iterator<Item = dummy_driver::DummyMidiEvent> {
+		iter.map(|e| dummy_driver::DummyMidiEvent { data: e.data[0..e.datalen as usize].into(), time: e.timestamp })
+	}
+
+	#[tokio::test]
+	async fn midi_takes_can_be_recorded() {
+		recording_test!(add_miditake, finish_miditake, MidiTakeStateChanged,
+			add_device: |frontend: &mut FrontendThreadState<dummy_driver::DummyDriver>| {
+				frontend.add_mididevice("dev")
+			},
+			setup: |driver: &dummy_driver::DummyDriver| {
+				fill_midi_device(driver, "dev", 44100*8);
+			},
+			check: |driver: &dummy_driver::DummyDriver, late_offset, capture_begin, playback_begin| {
+				let d = driver.lock();
+				let dev = d.midi_devices.get("dev").unwrap().lock().unwrap();
+				let reference : Vec<_> = midi_events_in_range(dev.incoming_events.iter().cloned(), capture_begin..capture_begin+88200).collect();
+				println!("reference: {:?}\ncommitted: {:?}", reference, dev.committed);
+				assert!(reference.len() > 0);
+				assert_iter_eq(
+					midi_events_in_range(dev.incoming_events.iter().cloned(), capture_begin+late_offset..capture_begin+88200),
+					midi_events_in_range(to_dummy_midi_event(dev.committed.iter().cloned()), playback_begin+late_offset..playback_begin+88200)
+				);
+				assert_iter_eq(
+					midi_events_in_range(dev.incoming_events.iter().cloned(), capture_begin..capture_begin+88200),
+					midi_events_in_range(to_dummy_midi_event(dev.committed.iter().cloned()), playback_begin+88200..playback_begin+2*88200)
+				);
+			}
+		);
 	}
 	
 	#[tokio::test]
