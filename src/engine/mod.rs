@@ -498,24 +498,54 @@ macro_rules! recording_test {
 		let driver = dummy_driver::DummyDriver::new(playback_latency as u32, capture_latency as u32, 44100);
 		let (mut frontend, _) = launch(driver.clone(), 1000);
 		frontend.set_loop_length(44100,4).unwrap();
-		let dev_id = frontend.add_device("audiodev", 2).unwrap();
+		let audiodev_id = frontend.add_device("audiodev", 2).unwrap();
+		let mididev_id = frontend.add_mididevice("mididev").unwrap();
 		fill_audio_device(&driver, "audiodev", 44100*8);
+		{ // fill midi device
+			let d = driver.lock();
+			let mut dev = d.midi_devices.get("mididev").unwrap().lock().unwrap();
+			dev.incoming_events.push(dummy_driver::DummyMidiEvent {
+				data: smallvec![0x90, 42, 92],
+				time: 1000
+			});
+			dev.incoming_events.push(dummy_driver::DummyMidiEvent {
+				data: smallvec![0x80, 42, 55],
+				time: 2000
+			});
+		}
 
-		let take_id = frontend.add_audiotake(dev_id, true).unwrap();
-		frontend.finish_audiotake(dev_id, take_id, 44100).unwrap();
+		let audiotake_id = frontend.add_audiotake(audiodev_id, true).unwrap();
+		let miditake_id = frontend.add_miditake(mididev_id, true).unwrap();
+		frontend.finish_audiotake(audiodev_id, audiotake_id, 44100).unwrap();
+		frontend.finish_miditake(mididev_id, miditake_id, 44100).unwrap();
 		driver.process_for(3*44100, 128);
 			
 		let d = driver.lock();
-		let dev = d.audio_devices.get("audiodev").unwrap().lock().unwrap();
-		let begin = 44100-playback_latency;
-		assert_sleq!(dev.playback_buffers[0][0..begin], 0.0,
-			"expected silence at the beginning");
-		assert_sleq!(dev.playback_buffers[0][begin..begin+44100], dev.capture_buffers[0][capture_latency..44100 + capture_latency],
-			"first repetition was not played correctly");
-		assert_sleq!(dev.playback_buffers[0][begin+44100..begin+2*44100], dev.capture_buffers[0][capture_latency..44100 + capture_latency],
-			"second repetition was not played correctly");
-
-		// TODO FIXME: test for midi takes
+		{ // check audio
+			let dev = d.audio_devices.get("audiodev").unwrap().lock().unwrap();
+			let begin = 44100-playback_latency;
+			assert_sleq!(dev.playback_buffers[0][0..begin], 0.0,
+				"expected silence at the beginning");
+			assert_sleq!(dev.playback_buffers[0][begin..begin+44100], dev.capture_buffers[0][capture_latency..44100 + capture_latency],
+				"first repetition was not played correctly");
+			assert_sleq!(dev.playback_buffers[0][begin+44100..begin+2*44100], dev.capture_buffers[0][capture_latency..44100 + capture_latency],
+				"second repetition was not played correctly");
+		}
+		{ // check midi
+			let dev = d.midi_devices.get("mididev").unwrap().lock().unwrap();
+			assert_eq!(dev.committed[0..2], vec![
+				crate::midi_message::MidiMessage {
+					timestamp: 44100 + 1000 - (playback_latency + capture_latency) as u32,
+					data: [0x90, 42, 92],
+					datalen: 3
+				},
+				crate::midi_message::MidiMessage {
+					timestamp: 44100 + 2000 - (playback_latency + capture_latency) as u32,
+					data: [0x80, 42, 55],
+					datalen: 3
+				},
+			]);
+		}
 	}
 
 macro_rules! mute_test {
