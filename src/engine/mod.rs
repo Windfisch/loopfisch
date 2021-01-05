@@ -435,6 +435,7 @@ macro_rules! recording_test {
 		);
 	}
 	
+// GRCOV_EXCL_START
 	fn assert_iter_eq<T: PartialEq + std::fmt::Debug>(mut iter1: impl Iterator<Item=T>, mut iter2: impl Iterator<Item=T>) {
 		let mut i = 0;
 		loop {
@@ -451,6 +452,7 @@ macro_rules! recording_test {
 		}
 		assert!(i > 0, "assert_iter_eq fails when both lists are empty");
 	}
+// GRCOV_EXCL_STOP
 
 	fn midi_events_in_range(iter: impl Iterator<Item = dummy_driver::DummyMidiEvent>, range: std::ops::Range<u32>) -> impl Iterator<Item = dummy_driver::DummyMidiEvent> {
 		let start = range.start;
@@ -581,5 +583,46 @@ macro_rules! mute_test {
 			midi_events_in_range(to_dummy_midi_event(dev.committed.iter().cloned()), 6*t..7*t)
 		);
 		assert_eq!(midi_events_in_range(to_dummy_midi_event(dev.committed.iter().cloned()), 7*t..8*t).count(), 0, "expected silence when muted");
+	}
+
+	#[tokio::test]
+	async fn midi_takes_capture_held_notes() {
+		let driver = dummy_driver::DummyDriver::new(0, 0, 44100);
+		let (mut frontend, _) = launch(driver.clone(), 1000);
+		frontend.set_loop_length(10000,4).unwrap();
+		let dev_id = frontend.add_mididevice("dev").unwrap();
+		
+		{
+			let d = driver.lock();
+			let mut dev = d.midi_devices.get("dev").unwrap().lock().unwrap();
+			dev.incoming_events.push(dummy_driver::DummyMidiEvent {
+				data: smallvec![0x90, 42, 92],
+				time: 1337
+			});
+			dev.incoming_events.push(dummy_driver::DummyMidiEvent {
+				data: smallvec![0x80, 42, 55],
+				time: 14200
+			});
+		}
+
+		driver.process_for(5000, 128); // not capturing, but a note has been played
+		let take_id = frontend.add_miditake(dev_id, true).unwrap();
+		frontend.finish_miditake(dev_id, take_id, 10000).unwrap();
+		driver.process_for(25000, 128); // capture will start, complete and the first iteration will be played back
+
+		let d = driver.lock();
+		let dev = d.midi_devices.get("dev").unwrap().lock().unwrap();
+		assert_eq!(dev.committed, vec![
+			crate::midi_message::MidiMessage {
+				timestamp: 20000,
+				data: [0x90, 42, 92],
+				datalen: 3
+			},
+			crate::midi_message::MidiMessage {
+				timestamp: 24200,
+				data: [0x80, 42, 55],
+				datalen: 3
+			},
+		]);
 	}
 }
