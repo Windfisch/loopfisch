@@ -59,7 +59,8 @@ pub async fn post_restart_transport(state: State<'_, std::sync::Arc<GuiState>>, 
 	let mut guard_ = state.mutex.lock().await;
 	let guard = &mut *guard_;
 	if let Some(synth) = guard.synths.iter_mut().find(|s| s.id == synthid) {
-		guard.engine.restart_midi_transport(synth.engine_mididevice_id);
+		guard.engine.restart_midi_transport(synth.engine_mididevice_id)
+			.map_err(|_| Status::InternalServerError)?;
 		return Ok(rocket::response::status::Accepted(None));
 	}
 	Err(Status::NotFound)
@@ -176,8 +177,8 @@ pub async fn post_take_finish_recording(state: State<'_, std::sync::Arc<GuiState
 					println!("rounding take duration {} to {} (base loop length is {})", current_duration, target_duration, loop_length);
 
 					match take.engine_take_id {
-						EngineTakeRef::Audio(id) => guard.engine.finish_audiotake(chain.engine_audiodevice_id, id, target_duration),
-						EngineTakeRef::Midi(id) => guard.engine.finish_miditake(synth.engine_mididevice_id, id, target_duration)
+						EngineTakeRef::Audio(id) => guard.engine.finish_audiotake(chain.engine_audiodevice_id, id, target_duration).map_err(|_| Status::InternalServerError)?,
+						EngineTakeRef::Midi(id) => guard.engine.finish_miditake(synth.engine_mididevice_id, id, target_duration).map_err(|_| Status::InternalServerError)?
 					};
 
 					// TODO set the take as finished

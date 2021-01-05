@@ -39,7 +39,9 @@ impl<T: MidiDeviceTrait> MidiClock<T> {
 				timestamp: timestamp_f / factor,
 				data: [0xF8, 0, 0],
 				datalen: 1
-			});
+			}).unwrap();
+			// we can't do anything about errors here. But this is so unlikely to happen
+			// and would mess up MIDI timing, so let's better crash instead of silently ignore this.
 		}
 
 		self.device.commit_out_buffer(scope);
@@ -51,7 +53,6 @@ mod tests {
 	use super::super::dummy_driver::*;
 	use super::*;
 	use super::super::testutils::spacing;
-	use std::sync::Arc;
 
 
 

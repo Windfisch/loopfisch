@@ -295,6 +295,7 @@ impl<Driver: DriverTrait> AudioThreadState<Driver>
 	}
 
 	fn process_midi_playback(&mut self, scope: &Driver::ProcessScope) {
+		use crate::midi_message::MidiMessage;
 		let mut cursor = self.miditakes.front();
 		while let Some(node) = cursor.get() {
 			let mut t = node.take.borrow_mut();
@@ -306,21 +307,21 @@ impl<Driver: DriverTrait> AudioThreadState<Driver>
 		for d in self.mididevices.iter_mut() {
 			if let Some((dev,data)) = d {
 				if data.stop_transport_pending {
-					dev.queue_event( crate::midi_message::MidiMessage {
+					dev.queue_event( MidiMessage {
 						timestamp: 0,
 						data: [0xFC, 0, 0],
 						datalen: 1
-					});
+					}).ok(); // we can't do anything about lost events
 					data.stop_transport_pending = false;
 				}
 				if data.start_transport_pending {
 					let time_until_action = self.song_length - (self.song_position + dev.capture_latency()) % self.song_length;
 					if time_until_action < scope.n_frames() {
-						dev.queue_event( crate::midi_message::MidiMessage {
+						dev.queue_event( MidiMessage {
 							timestamp: time_until_action,
 							data: [0xFA, 0, 0],
 							datalen: 1
-						});
+						}).ok(); // we can't do anything about lost events
 						data.start_transport_pending = false;
 					}
 				}

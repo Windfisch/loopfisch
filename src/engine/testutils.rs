@@ -38,10 +38,6 @@ pub fn rand_iter(seed: u32) -> XorShift {
 	return iter;
 }
 
-pub fn rand_vec(seed: u32, length: usize) -> Vec<u64> {
-	rand_iter(seed).take(length).collect()
-}
-
 pub fn rand_iter_f32(seed: u32) -> impl Iterator<Item=f32> {
 	rand_iter(seed).map(|x| x as f32 / 0x8000_0000_0000_0000u64 as f32 - 1.0)
 }

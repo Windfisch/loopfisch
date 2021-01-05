@@ -90,8 +90,6 @@ impl Take {
 		}
 	}
 
-	pub fn is_audio(&self) -> bool { return !self.is_midi(); }
-
 	pub fn is_audible(&self) -> bool {
 		return self.state == RecordingState::Finished && self.muted == false;
 	}

@@ -197,7 +197,8 @@ fn patch_chain_(engine: &mut dyn FrontendTrait, mididevice_id: usize, chains: &m
 			}
 			if let Some(echo) = patch.echo {
 				chain_to_patch.echo = echo;
-				engine.set_audiodevice_echo(chain_to_patch.engine_audiodevice_id, echo);
+				engine.set_audiodevice_echo(chain_to_patch.engine_audiodevice_id, echo)
+					.map_err(|_| Status::InternalServerError)?;
 			}
 		}
 
@@ -224,8 +225,8 @@ fn patch_take_(engine: &mut dyn FrontendTrait, mididevice_id: usize, audiodevice
 			if let Some(muted) = patch.muted {
 				println!("patching take {} ({}) muted {}", take_to_patch.id, take_to_patch.name, muted);
 				match take_to_patch.engine_take_id {
-					EngineTakeRef::Audio(id) => { engine.set_audiotake_unmuted(audiodevice_id, id, !muted); }
-					EngineTakeRef::Midi(id) => { engine.set_miditake_unmuted(mididevice_id, id, !muted); }
+					EngineTakeRef::Audio(id) => { engine.set_audiotake_unmuted(audiodevice_id, id, !muted).map_err(|_| Status::InternalServerError)?; }
+					EngineTakeRef::Midi(id) => { engine.set_miditake_unmuted(mididevice_id, id, !muted).map_err(|_| Status::InternalServerError)?; }
 				}
 				take_to_patch.muted = muted;
 			}

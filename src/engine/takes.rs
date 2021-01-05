@@ -10,7 +10,6 @@ use super::driver_traits::*;
 use super::midi_registry::MidiNoteRegistry;
 
 use crate::outsourced_allocation_buffer::Buffer;
-use smallvec::smallvec;
 
 pub struct AudioTake {
 	/// Sequence of all samples. The take's duration and playhead position are implicitly managed by the underlying Buffer.
@@ -23,6 +22,7 @@ pub struct AudioTake {
 	pub audiodev_id: usize,
 	pub unmuted: bool,
 	pub started_recording_at: u32,
+	pub damaged: bool
 }
 
 impl std::fmt::Debug for AudioTake {
@@ -51,7 +51,8 @@ impl AudioTake {
 			id,
 			audiodev_id,
 			unmuted,
-			started_recording_at: 0
+			started_recording_at: 0,
+			damaged: false
 		}
 	}
 
@@ -113,10 +114,8 @@ impl AudioTake {
 		for (channel_buffer, channel_slice) in self.samples.iter_mut().zip(device.record_buffers(scope)) {
 			let data = &channel_slice[range.clone()];
 			for d in data {
-				let err = channel_buffer.push(*d).is_err();
-				if err {
-					// FIXME proper error handling, such as marking the take as stale, dropping it.
-					panic!("Failed to add audio sample to already-full sample queue!");
+				if channel_buffer.push(*d).is_err() {
+					self.damaged = true;
 				}
 			}
 		}
@@ -139,6 +138,7 @@ pub struct MidiTake {
 	pub unmuted_old: bool,
 	pub started_recording_at: u32,
 	pub note_registry: RefCell<MidiNoteRegistry>, // this RefCell here SUCKS. TODO.
+	pub damaged: bool // gets set when not all events could be recorded
 }
 
 impl std::fmt::Debug for MidiTake {
@@ -170,7 +170,8 @@ impl MidiTake {
 			playback_position: 0,
 			length: None,
 			recorded_length: 0,
-			note_registry: RefCell::new(MidiNoteRegistry::new())
+			note_registry: RefCell::new(MidiNoteRegistry::new()),
+			damaged: false
 		}
 	}
 
@@ -213,7 +214,7 @@ impl MidiTake {
 								data: event.data,
 								datalen: event.datalen
 							}
-						).unwrap();
+						).ok(); // not much we can do about errors
 					}
 					note_registry.register_event(event.data);
 
@@ -291,11 +292,13 @@ impl MidiTake {
 		}
 
 		for data in registry.active_notes() {
-			self.events.push( MidiMessage {
+			if self.events.push( MidiMessage {
 				timestamp: 0,
 				data,
 				datalen: 3
-			});
+			}).is_err() {
+				self.damaged = true;
+			}
 		}
 	}
 
@@ -311,18 +314,14 @@ impl MidiTake {
 					let data: [u8;3] = event.bytes().try_into().unwrap();
 					let timestamp = event.time() - range.start + self.recorded_length;
 				
-					let result = self.events.push( MidiMessage {
+					if self.events.push( MidiMessage {
 						timestamp,
 						data,
 						datalen: 3
-					});
-					// TODO: assert that this is monotonic
-
-					if result.is_err() {
-						//log_error("Failed to add MIDI event to already-full MIDI queue! Dropping it...");
-						// FIXME
-						panic!("Failed to add MIDI event to already-full MIDI queue!");
+					}).is_err() {
+						self.damaged = true;
 					}
+					// TODO: assert that this is monotonic
 				}
 			}
 		}
@@ -371,6 +370,7 @@ mod tests {
 	use super::super::dummy_driver::*;
 	use super::*;
 	use super::super::testutils::rand_vec_f32;
+	use smallvec::smallvec;
 
 	fn prepare() -> (AudioTake, DummyScope, DummyAudioDevice) {
 		const HUGE_CHUNKSIZE: usize = 100000;
