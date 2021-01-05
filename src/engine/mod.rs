@@ -84,6 +84,7 @@ mod tests {
 	use super::*;
 	use tokio;
 	use std::sync::{Arc,Mutex};
+	use smallvec::smallvec;
 
 // GRCOV_EXCL_START
 	fn slice_diff<T: PartialEq + std::fmt::Debug>(lhs: &[T], rhs: &[T]) {
@@ -158,7 +159,7 @@ mod tests {
 
 		assert_eq!(frontend.devices().len(), 1);
 		assert_eq!(frontend.devices().get(&aid).expect("could not find device").info().n_channels, 3);
-		assert!(frontend.mididevices.contains_key(&mid));
+		assert!(frontend.mididevices().contains_key(&mid));
 
 		let guard = driver.lock();
 		assert_eq!(guard.audio_devices.len(), 2);

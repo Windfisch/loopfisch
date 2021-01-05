@@ -7,12 +7,14 @@ use std::slice::*;
 use std::iter::*;
 use crate::owning_iter::OwningIterator;
 use assert_no_alloc::{permit_alloc, PermitDrop};
+use std::cell::RefCell;
+use smallvec::SmallVec;
 
 #[derive(Debug)]
 pub struct DummyMidiDevice {
 	queue: Vec<MidiMessage>,
 	pub committed: Vec<MidiMessage>,
-	pub registry: MidiNoteRegistry,
+	pub registry: RefCell<MidiNoteRegistry>, // FIXME this should not be a RefCell!
 	pub incoming_events: Vec<DummyMidiEvent>,
 	playback_latency: u32,
 	capture_latency: u32
@@ -24,7 +26,7 @@ impl DummyMidiDevice {
 			committed: vec![],
 			playback_latency,
 			capture_latency,
-			registry: MidiNoteRegistry::new(),
+			registry: RefCell::new(MidiNoteRegistry::new()),
 			incoming_events: Vec::new()
 		}
 	}
@@ -65,7 +67,7 @@ impl DummyScope {
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct DummyMidiEvent {
-	pub data: Vec<u8>,
+	pub data: SmallVec<[u8; 4]>,
 	pub time: u32
 }
 impl TimestampedMidiEvent for DummyMidiEvent {
@@ -110,16 +112,21 @@ impl MidiDeviceTrait for DummyMidiDevice {
 		});
 		Ok(())
 	}
-	fn update_registry(&mut self, _scope: &Self::Scope) { 
+	fn update_registry(&mut self, scope: &Self::Scope) { 
 		// FIXME duplicate code, same as in jack_driver.rs.
 		// This method should not be part of the DriverTrait API,
 		// instead it should be a detail of the backend.
-		if self.incoming_events.len() > 0 {
-			unimplemented!();
-		}
+		permit_alloc(|| {
+			for event in self.incoming_events(scope) {
+				if event.data.len() == 3 {
+					let data = [event.data[0], event.data[1], event.data[2]];
+					self.registry.borrow_mut().register_event(data);
+				}
+			}
+		});
 	}
 	fn clone_registry(&self) -> super::midi_registry::MidiNoteRegistry {
-		self.registry.clone()
+		self.registry.borrow_mut().clone()
 	}
 	fn info(&self) -> MidiDeviceInfo {
 		MidiDeviceInfo {

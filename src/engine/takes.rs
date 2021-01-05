@@ -10,7 +10,7 @@ use super::driver_traits::*;
 use super::midi_registry::MidiNoteRegistry;
 
 use crate::outsourced_allocation_buffer::Buffer;
-
+use smallvec::smallvec;
 
 pub struct AudioTake {
 	/// Sequence of all samples. The take's duration and playhead position are implicitly managed by the underlying Buffer.
@@ -596,16 +596,16 @@ mod tests {
 		let mut dev = DummyMidiDevice::new(0, 0);
 
 		dev.incoming_events = vec![
-			DummyMidiEvent { time:     0, data: vec![0x90, 50, 64] },
-			DummyMidiEvent { time:     1, data: vec![0x90, 51, 64] },
-			DummyMidiEvent { time:   230, data: vec![0x90, 60, 64] },
-			DummyMidiEvent { time:  1023, data: vec![0x80, 50, 64] },
-			DummyMidiEvent { time:  1023, data: vec![0x80, 51, 64] },
-			DummyMidiEvent { time:  1024, data: vec![0x90, 52, 64] },
-			DummyMidiEvent { time:  1024, data: vec![0x90, 53, 64] },
-			DummyMidiEvent { time:  1100, data: vec![0x80, 53, 64] },
-			DummyMidiEvent { time:  1100, data: vec![0x80, 52, 64] },
-			DummyMidiEvent { time:  1200, data: vec![0x80, 60, 64] },
+			DummyMidiEvent { time:     0, data: smallvec![0x90, 50, 64] },
+			DummyMidiEvent { time:     1, data: smallvec![0x90, 51, 64] },
+			DummyMidiEvent { time:   230, data: smallvec![0x90, 60, 64] },
+			DummyMidiEvent { time:  1023, data: smallvec![0x80, 50, 64] },
+			DummyMidiEvent { time:  1023, data: smallvec![0x80, 51, 64] },
+			DummyMidiEvent { time:  1024, data: smallvec![0x90, 52, 64] },
+			DummyMidiEvent { time:  1024, data: smallvec![0x90, 53, 64] },
+			DummyMidiEvent { time:  1100, data: smallvec![0x80, 53, 64] },
+			DummyMidiEvent { time:  1100, data: smallvec![0x80, 52, 64] },
+			DummyMidiEvent { time:  1200, data: smallvec![0x80, 60, 64] },
 		];
 
 		scope.next(1024);
@@ -714,7 +714,7 @@ mod tests {
 			
 			let expected_events : Vec<_> =
 				dev.incoming_events.iter().filter(|ev| ev.time < 1024)
-				.chain([ DummyMidiEvent { time:  1023, data: vec![0x80, 60, 64] } ].iter())
+				.chain([ DummyMidiEvent { time:  1023, data: smallvec![0x80, 60, 64] } ].iter())
 				.cloned().collect();
 
 			assert!(extract_and_convert(&dev, 2048..3072) == expected_events);
@@ -743,15 +743,15 @@ mod tests {
 		let mut scope = DummyScope::new();
 		let mut dev = DummyMidiDevice::new(0, 0);
 
-		dev.registry.register_event([0x90, 31, 64]);
+		dev.registry.borrow_mut().register_event([0x90, 31, 64]);
 		dev.incoming_events = vec![
-			DummyMidiEvent { time:  500, data: vec![0x90, 30, 64] },
-			DummyMidiEvent { time: 1000, data: vec![0x90, 50, 64] },
-			DummyMidiEvent { time: 1001, data: vec![0x90, 51, 64] },
-			DummyMidiEvent { time: 1200, data: vec![0x80, 30, 64] },
-			DummyMidiEvent { time: 1200, data: vec![0x80, 31, 64] },
-			DummyMidiEvent { time: 1800, data: vec![0x80, 50, 64] },
-			DummyMidiEvent { time: 2023, data: vec![0x80, 51, 64] },
+			DummyMidiEvent { time:  500, data: smallvec![0x90, 30, 64] },
+			DummyMidiEvent { time: 1000, data: smallvec![0x90, 50, 64] },
+			DummyMidiEvent { time: 1001, data: smallvec![0x90, 51, 64] },
+			DummyMidiEvent { time: 1200, data: smallvec![0x80, 30, 64] },
+			DummyMidiEvent { time: 1200, data: smallvec![0x80, 31, 64] },
+			DummyMidiEvent { time: 1800, data: smallvec![0x80, 50, 64] },
+			DummyMidiEvent { time: 2023, data: smallvec![0x80, 51, 64] },
 		];
 
 		scope.next(2024);
@@ -768,14 +768,14 @@ mod tests {
 		dev.commit_out_buffer(&scope);
 		
 		let expected_events = vec![
-			DummyMidiEvent { time:    0, data: vec![0x90, 30, 64] },
-			DummyMidiEvent { time:    0, data: vec![0x90, 31, 64] },
-			DummyMidiEvent { time:    0, data: vec![0x90, 50, 64] },
-			DummyMidiEvent { time:    1, data: vec![0x90, 51, 64] },
-			DummyMidiEvent { time:  200, data: vec![0x80, 30, 64] },
-			DummyMidiEvent { time:  200, data: vec![0x80, 31, 64] },
-			DummyMidiEvent { time:  800, data: vec![0x80, 50, 64] },
-			DummyMidiEvent { time: 1023, data: vec![0x80, 51, 64] },
+			DummyMidiEvent { time:    0, data: smallvec![0x90, 30, 64] },
+			DummyMidiEvent { time:    0, data: smallvec![0x90, 31, 64] },
+			DummyMidiEvent { time:    0, data: smallvec![0x90, 50, 64] },
+			DummyMidiEvent { time:    1, data: smallvec![0x90, 51, 64] },
+			DummyMidiEvent { time:  200, data: smallvec![0x80, 30, 64] },
+			DummyMidiEvent { time:  200, data: smallvec![0x80, 31, 64] },
+			DummyMidiEvent { time:  800, data: smallvec![0x80, 50, 64] },
+			DummyMidiEvent { time: 1023, data: smallvec![0x80, 51, 64] },
 		];
 
 		assert!(extract_and_convert(&dev, 2024..(2024+1024)) == expected_events);
@@ -804,8 +804,8 @@ mod tests {
 		});
 
 		let expected_events = vec![
-			DummyMidiEvent { time: 102, data: vec![0x90, 60, 64] },
-			DummyMidiEvent { time: 286, data: vec![0x90, 60, 64] },
+			DummyMidiEvent { time: 102, data: smallvec![0x90, 60, 64] },
+			DummyMidiEvent { time: 286, data: smallvec![0x90, 60, 64] },
 		];
 		
 		assert!(extract_and_convert(&dev, 2048..3072) == expected_events);
@@ -818,16 +818,16 @@ mod tests {
 		let mut dev = DummyMidiDevice::new(0, 0);
 
 		dev.incoming_events = vec![
-			DummyMidiEvent { time:     0, data: vec![0x90, 50, 64] },
-			DummyMidiEvent { time:     1, data: vec![0x90, 51, 64] },
-			DummyMidiEvent { time:   230, data: vec![0x90, 60, 64] },
-			DummyMidiEvent { time:   570, data: vec![0x80, 50, 64] },
-			DummyMidiEvent { time:   800, data: vec![0x80, 51, 64] },
-			DummyMidiEvent { time:  1024, data: vec![0x90, 52, 64] },
-			DummyMidiEvent { time:  1024, data: vec![0x90, 53, 64] },
-			DummyMidiEvent { time:  1100, data: vec![0x80, 53, 64] },
-			DummyMidiEvent { time:  1100, data: vec![0x80, 52, 64] },
-			DummyMidiEvent { time:  1200, data: vec![0x80, 60, 64] },
+			DummyMidiEvent { time:     0, data: smallvec![0x90, 50, 64] },
+			DummyMidiEvent { time:     1, data: smallvec![0x90, 51, 64] },
+			DummyMidiEvent { time:   230, data: smallvec![0x90, 60, 64] },
+			DummyMidiEvent { time:   570, data: smallvec![0x80, 50, 64] },
+			DummyMidiEvent { time:   800, data: smallvec![0x80, 51, 64] },
+			DummyMidiEvent { time:  1024, data: smallvec![0x90, 52, 64] },
+			DummyMidiEvent { time:  1024, data: smallvec![0x90, 53, 64] },
+			DummyMidiEvent { time:  1100, data: smallvec![0x80, 53, 64] },
+			DummyMidiEvent { time:  1100, data: smallvec![0x80, 52, 64] },
+			DummyMidiEvent { time:  1200, data: smallvec![0x80, 60, 64] },
 		];
 
 		scope.next(512);
@@ -872,9 +872,9 @@ mod tests {
 		});
 
 		assert!(extract_and_convert(&dev, 2048..4096) == vec![
-			DummyMidiEvent { time: 1040, data: vec![0x80, 52, 64] },
-			DummyMidiEvent { time: 1040, data: vec![0x80, 53, 64] },
-			DummyMidiEvent { time: 1040, data: vec![0x80, 60, 64] },
+			DummyMidiEvent { time: 1040, data: smallvec![0x80, 52, 64] },
+			DummyMidiEvent { time: 1040, data: smallvec![0x80, 53, 64] },
+			DummyMidiEvent { time: 1040, data: smallvec![0x80, 60, 64] },
 		]);
 
 		assert!(t.unmuted_old == false);
@@ -904,9 +904,9 @@ mod tests {
 		});
 
 		assert!(extract_and_convert(&dev, 2048..4096) == vec![
-			DummyMidiEvent { time: 1040, data: vec![0x90, 52, 64] },
-			DummyMidiEvent { time: 1040, data: vec![0x90, 53, 64] },
-			DummyMidiEvent { time: 1040, data: vec![0x90, 60, 64] },
+			DummyMidiEvent { time: 1040, data: smallvec![0x90, 52, 64] },
+			DummyMidiEvent { time: 1040, data: smallvec![0x90, 53, 64] },
+			DummyMidiEvent { time: 1040, data: smallvec![0x90, 60, 64] },
 		]);
 
 		assert!(t.unmuted_old == true);
