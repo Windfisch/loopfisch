@@ -85,6 +85,7 @@ mod tests {
 	use tokio;
 	use std::sync::{Arc,Mutex};
 
+// GRCOV_EXCL_START
 	fn slice_diff<T: PartialEq + std::fmt::Debug>(lhs: &[T], rhs: &[T]) {
 		if let Some(result) = lhs.iter().zip(rhs.iter()).map(|x| x.0 != x.1).enumerate().find(|t| t.1) {
 			let index = result.0;
@@ -96,6 +97,8 @@ mod tests {
 		}
 	}
 
+	/// Asserts two (large) slices are equal. Prints a small context around the first
+	/// difference, if unequal
 	macro_rules! assert_sleq {
 		($lhs:expr, 0.0) => {{
 			let lhs = &$lhs;
@@ -130,6 +133,7 @@ mod tests {
 			}
 		}}
 	}
+// GRCOV_EXCL_STOP
 
 
 	#[tokio::test]

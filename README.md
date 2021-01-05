@@ -52,4 +52,6 @@ Test suite
 Run the tests with `cargo test`.
 
 Note that the *outsourced_allocation_buffer* tests are inherently racy and it might be needed to increase
-sleep time in `fn wait()`.
+sleep time in `fn wait()`. There is nothing we can do about this, as this is the intended use case for
+*outsourced_allocation_buffer*. In normal situations, the allocator thread has between 0.2 to 2 seconds
+to react, but this would slow the test suite down heavily.

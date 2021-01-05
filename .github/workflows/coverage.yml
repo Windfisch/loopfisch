@@ -31,6 +31,6 @@ jobs:
       - run: cargo test
         env:
           RUSTFLAGS: "-Zinstrument-coverage"
-      - run: grcov . --binary-path ./target/debug -s . -t lcov --branch --ignore-not-existing -o lcov.info
+      - run: grcov . --binary-path ./target/debug -s . -t lcov --branch --excl-start GRCOV_EXCL_START --excl-stop GRCOV_EXCL_STOP --excl-line GRCOV_EXCL_LINE --ignore-not-existing -o lcov.info
       - run: bash <(curl -s https://codecov.io/bash) -f lcov.info
 
