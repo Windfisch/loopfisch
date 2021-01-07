@@ -4,7 +4,6 @@ import chain from './chain.vue';
 import synth from './synth.vue';
 import bpm from './bpm.vue';
 import Vue from 'vue';
-import axios from 'axios';
 
 Vue.component('pie', pie);
 Vue.component("take", take);
