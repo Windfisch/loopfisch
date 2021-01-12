@@ -119,6 +119,24 @@ async fn midiclock_is_always_active() {
 }
 
 #[tokio::test]
+async fn song_length_cannot_be_changed_if_takes_exist() {
+	{
+		let driver = DummyDriver::new(0, 0, 48000);
+		let (mut frontend, _) = launch(driver.clone(), 1000);
+		let id = frontend.add_device("dev", 2).unwrap();
+		frontend.add_audiotake(id, false).unwrap();
+		frontend.set_loop_length(48000, 8).expect_err("frontend should not allow changing song length when audio takes exist");
+	}
+	{
+		let driver = DummyDriver::new(0, 0, 48000);
+		let (mut frontend, _) = launch(driver.clone(), 1000);
+		let id = frontend.add_mididevice("dev").unwrap();
+		frontend.add_miditake(id, false).unwrap();
+		frontend.set_loop_length(48000, 8).expect_err("frontend should not allow changing song length when midi takes exist");
+	}
+}
+
+#[tokio::test]
 async fn midiclock_reacts_to_set_loop_length() {
 	for latency in vec![0,64] {
 		let driver = DummyDriver::new(latency, 0, 96000);

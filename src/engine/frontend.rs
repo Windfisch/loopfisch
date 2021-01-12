@@ -86,8 +86,15 @@ impl<Driver: DriverTrait> new pub FrontendTrait for FrontendThreadState<Driver> 
 	}
 
 	pub fn set_loop_length(&mut self, loop_length_samples: u32, n_beats: u32) -> Result<(),()> {
-		// FIXME TODO: keep track if takes exist, refuse to set the loop length in that case
 		// FIXME TODO: reject song lengths that are smaller than the maximum latency.
+
+		// reject changing the loop length if takes exist.
+		if self.devices.values().map(|dev| dev.takes.len())
+				.chain( self.mididevices.values().map(|dev| dev.takes.len()) )
+				.any(|n| n>0) {
+			return Err(());
+		}
+
 		self.command_channel.send_message(Message::SetSongLength(loop_length_samples, n_beats))?;
 		Ok(())
 	}
