@@ -1,6 +1,6 @@
 <script>
 module.exports = {
-	props: ['value'],
+	props: ['value', 'disabled'],
 	watch: {
 		value: function(val) {
 			this.bpm = val.bpm;
@@ -59,8 +59,8 @@ module.exports = {
 	<div>
 		<input v-model="bpm" v-bind:disabled="!bpm_editing" type="number" min="1" max="999"/> bpm x
 		<input v-model="beats" v-bind:disabled="!bpm_editing" type="number" min="1" max="99"/> beats
-		<button v-on:click="set_or_edit">{{ bpm_editing ? "Set" : "Edit" }}</button>
-		<button v-on:mousedown="tap">Tap</button>
+		<button v-on:click="set_or_edit" v-bind:disabled="disabled">{{ bpm_editing ? "Set" : "Edit" }}</button>
+		<button v-on:mousedown="tap" v-bind:disabled="disabled">Tap</button>
 	</div>
 </template>
 

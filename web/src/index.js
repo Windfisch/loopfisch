@@ -242,6 +242,17 @@ var app2 = new Vue({
 				alert("Failed to create synth!");
 			}
 		}
+	},
+	computed: {
+		n_takes: function() {
+			var total = 0;
+			for (var synth of this.synths) {
+				for (var chain of synth.chains) {
+					total += chain.takes.length;
+				}
+			}
+			return total;
+		}
 	}
 })
 

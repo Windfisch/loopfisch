@@ -151,7 +151,7 @@ body {
 		<div>
 		<button v-on:click="add_synth_clicked">Add synth</button>
 		Time: {{ playback_time.toFixed(2) }}, LoopLength: {{ loop_length }}
-		<bpm v-model="loop_settings" v-on:input="bpm_beats_changed"></bpm>
+		<bpm v-model="loop_settings" v-on:input="bpm_beats_changed" v-bind:disabled="n_takes > 0"></bpm>
 		</div>
 		<div>
 		<synth v-for="synth in synths" v-bind:model="synth" v-bind:id="synth.id" v-bind:name="synth.name" v-bind:chains="synth.chains"> </synth>
