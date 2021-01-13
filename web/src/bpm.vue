@@ -5,6 +5,13 @@ module.exports = {
 		value: function(val) {
 			this.bpm = val.bpm;
 			this.beats = val.beats;
+		},
+		disabled: function(val) {
+			if (val) {
+				this.bpm_editing = false;
+				this.bpm = this.value.bpm;
+				this.beats = this.value.beats;
+			}
 		}
 	},
 	methods: {
