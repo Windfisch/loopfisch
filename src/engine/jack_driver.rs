@@ -77,7 +77,6 @@ impl DriverTrait for JackDriver {
 			in_port,
 			out_port,
 			out_buffer: smallvec::SmallVec::new(),
-			registry: super::midi_registry::MidiNoteRegistry::new(),
 			name: name.into()
 		})
 	}
@@ -92,7 +91,6 @@ pub struct MidiDevice {
 	out_port: jack::Port<jack::MidiOut>,
 
 	out_buffer: smallvec::SmallVec<[(MidiMessage, usize); 128]>,
-	registry: super::midi_registry::MidiNoteRegistry, // FIXME this belongs in the engine, not the driver
 
 	name: String
 }
@@ -152,20 +150,6 @@ impl MidiDeviceTrait for MidiDevice {
 		}
 	}
 
-	fn update_registry(&mut self, scope: &jack::ProcessScope) {
-		use std::convert::TryInto;
-		for event in self.in_port.iter(scope) {
-			if event.bytes.len() == 3 {
-				let data: [u8;3] = event.bytes.try_into().unwrap();
-				self.registry.register_event(data);
-			}
-		}
-	}
-
-	fn clone_registry(&self) -> super::midi_registry::MidiNoteRegistry {
-		self.registry.clone()
-	}
-	
 	fn info(&self) -> MidiDeviceInfo {
 		MidiDeviceInfo {
 			name: self.name.clone()

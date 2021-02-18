@@ -11,7 +11,7 @@ use super::driver_traits::*;
 
 use super::metronome::AudioMetronome;
 use super::midiclock::MidiClock;
-
+use super::midi_registry::MidiNoteRegistry;
 
 use assert_no_alloc::assert_no_alloc;
 use crate::realtime_send_queue;
@@ -61,14 +61,16 @@ impl AudioDeviceSettings {
 
 pub struct MidiDeviceSettings {
 	start_transport_pending: bool,
-	stop_transport_pending: bool
+	stop_transport_pending: bool,
+	registry: MidiNoteRegistry,
 }
 
 impl MidiDeviceSettings {
 	pub fn new() -> MidiDeviceSettings {
 		MidiDeviceSettings {
 			start_transport_pending: false,
-			stop_transport_pending: false
+			stop_transport_pending: false,
+			registry: MidiNoteRegistry::new(),
 		}
 	}
 }
@@ -373,7 +375,7 @@ impl<Driver: DriverTrait> AudioThreadState<Driver>
 		let mut cursor = self.miditakes.front();
 		while let Some(node) = cursor.get() {
 			let mut t = node.take.borrow_mut();
-			let dev = &self.mididevices[t.mididev_id].as_ref().unwrap().0;
+			let (dev, dev_data) = &self.mididevices[t.mididev_id].as_ref().unwrap();
 		
 			let (song_wraps, song_wraps_at) = check_wrap(
 				self.song_position as i32 - dev.capture_latency() as i32,
@@ -396,7 +398,7 @@ impl<Driver: DriverTrait> AudioThreadState<Driver>
 					self.event_channel.send_or_complain(Event::MidiTakeStateChanged(t.mididev_id, t.id, RecordState::Recording, self.transport_position + song_wraps_at));
 					t.record_state = Recording;
 					t.started_recording_at = self.transport_position + song_wraps_at;
-					t.start_recording(scope, dev, 0..song_wraps_at);
+					t.start_recording(scope, dev, dev_data.registry.clone(), 0..song_wraps_at);
 					t.recorded_length = 0;
 					t.record(scope, dev, song_wraps_at..scope.n_frames());
 					t.playback_position = scope.n_frames()-song_wraps_at + dev.capture_latency() + dev.playback_latency();
@@ -407,8 +409,15 @@ impl<Driver: DriverTrait> AudioThreadState<Driver>
 		}
 
 		for dev_opt in self.mididevices.iter_mut() {
-			if let Some((dev, _data)) = dev_opt {
-				dev.update_registry(scope);
+			if let Some((dev, data)) = dev_opt {
+				for event in dev.incoming_events(scope) {
+					use std::convert::TryInto;
+					let bytes = event.bytes();
+					if bytes.len() == 3 {
+						let mididata: [u8;3] = bytes.try_into().unwrap();
+						data.registry.register_event(mididata);
+					}
+				}
 			}
 		}
 	}

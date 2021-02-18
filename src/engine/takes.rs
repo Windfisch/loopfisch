@@ -278,10 +278,9 @@ impl MidiTake {
 
 	/** registers all notes that are currently held down (at time range.begin) as if they were
 	  * pressed down at the very beginning of the recording */
-	pub fn start_recording<T: MidiDeviceTrait>(&mut self, scope: &T::Scope, device: &T, range: std::ops::Range<u32>) {
+	pub fn start_recording<T: MidiDeviceTrait>(&mut self, scope: &T::Scope, device: &T, mut registry: MidiNoteRegistry, range: std::ops::Range<u32>) {
 		use std::convert::TryInto;
 		
-		let mut registry = device.clone_registry();
 		for event in device.incoming_events(scope) {
 			if range.contains(&event.time()) {
 				if event.bytes().len() == 3 {
@@ -609,7 +608,7 @@ mod tests {
 		];
 
 		scope.next(1024);
-		t.start_recording(&scope, &mut dev, 0..0);
+		t.start_recording(&scope, &mut dev, MidiNoteRegistry::new(), 0..0);
 		t.record(&scope, &mut dev, 0..scope.n_frames());
 		
 		scope.next(1024);
@@ -742,8 +741,9 @@ mod tests {
 		let mut t = MidiTake::new(0, 0, false);
 		let mut scope = DummyScope::new();
 		let mut dev = DummyMidiDevice::new(0, 0);
+		let mut registry = MidiNoteRegistry::new();
 
-		dev.registry.borrow_mut().register_event([0x90, 31, 64]);
+		registry.register_event([0x90, 31, 64]);
 		dev.incoming_events = vec![
 			DummyMidiEvent { time:  500, data: smallvec![0x90, 30, 64] },
 			DummyMidiEvent { time: 1000, data: smallvec![0x90, 50, 64] },
@@ -755,7 +755,7 @@ mod tests {
 		];
 
 		scope.next(2024);
-		t.start_recording(&scope, &mut dev, 0..1000);
+		t.start_recording(&scope, &mut dev, registry, 0..1000);
 		t.record(&scope, &mut dev, 1000..scope.n_frames());
 		
 		t.unmuted = true;
@@ -831,7 +831,7 @@ mod tests {
 		];
 
 		scope.next(512);
-		t.start_recording(&scope, &mut dev, 0..0);
+		t.start_recording(&scope, &mut dev, MidiNoteRegistry::new(), 0..0);
 		t.record(&scope, &mut dev, 0..scope.n_frames());
 		
 		t.unmuted = true;

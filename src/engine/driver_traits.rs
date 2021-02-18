@@ -52,8 +52,6 @@ pub trait MidiDeviceTrait: std::fmt::Debug + Send + 'static {
 	fn incoming_events(&'a self, scope: &'a Self::Scope) -> Self::EventIterator<'a>;
 	fn commit_out_buffer(&mut self, scope: &Self::Scope);
 	fn queue_event(&mut self, msg: MidiMessage) -> Result<(), ()>;
-	fn update_registry(&mut self, scope: &Self::Scope);
-	fn clone_registry(&self) -> super::midi_registry::MidiNoteRegistry;
 	fn info(&self) -> MidiDeviceInfo;
 	fn playback_latency(&self) -> u32;
 	fn capture_latency(&self) -> u32;

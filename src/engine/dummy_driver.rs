@@ -1,6 +1,5 @@
 use crate::midi_message::MidiMessage;
 use super::driver_traits::*;
-use super::midi_registry::MidiNoteRegistry;
 
 use std::sync::{Arc, Mutex};
 use std::slice::*;
@@ -14,7 +13,6 @@ use smallvec::SmallVec;
 pub struct DummyMidiDevice {
 	queue: Vec<MidiMessage>,
 	pub committed: Vec<MidiMessage>,
-	pub registry: RefCell<MidiNoteRegistry>, // FIXME this should not be a RefCell!
 	pub incoming_events: Vec<DummyMidiEvent>,
 	playback_latency: u32,
 	capture_latency: u32
@@ -26,7 +24,6 @@ impl DummyMidiDevice {
 			committed: vec![],
 			playback_latency,
 			capture_latency,
-			registry: RefCell::new(MidiNoteRegistry::new()),
 			incoming_events: Vec::new()
 		}
 	}
@@ -112,22 +109,6 @@ impl MidiDeviceTrait for DummyMidiDevice {
 		});
 		Ok(())
 	}
-	fn update_registry(&mut self, scope: &Self::Scope) { 
-		// FIXME duplicate code, same as in jack_driver.rs.
-		// This method should not be part of the DriverTrait API,
-		// instead it should be a detail of the backend.
-		permit_alloc(|| {
-			for event in self.incoming_events(scope) {
-				if event.data.len() == 3 {
-					let data = [event.data[0], event.data[1], event.data[2]];
-					self.registry.borrow_mut().register_event(data);
-				}
-			}
-		});
-	}
-	fn clone_registry(&self) -> super::midi_registry::MidiNoteRegistry {
-		self.registry.borrow_mut().clone()
-	}
 	fn info(&self) -> MidiDeviceInfo {
 		MidiDeviceInfo {
 			name: "??".into()
@@ -156,8 +137,6 @@ impl MidiDeviceTrait for Arc<Mutex<DummyMidiDevice>> {
 	}
 	fn commit_out_buffer(&mut self, scope: &Self::Scope) { self.lock().unwrap().commit_out_buffer(scope) }
 	fn queue_event(&mut self, msg: MidiMessage) -> Result<(), ()> { self.lock().unwrap().queue_event(msg) }
-	fn update_registry(&mut self, scope: &Self::Scope) { self.lock().unwrap().update_registry(scope) }
-	fn clone_registry(&self) -> super::midi_registry::MidiNoteRegistry { self.lock().unwrap().clone_registry() }
 	fn info(&self) -> MidiDeviceInfo { self.lock().unwrap().info() }
 	fn playback_latency(&self) -> u32 { self.lock().unwrap().playback_latency() }
 	fn capture_latency(&self) -> u32 { self.lock().unwrap().capture_latency() }
