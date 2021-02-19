@@ -47,27 +47,27 @@ macro_rules! for_take {
 	}}
 }
 
-pub struct AudioDeviceSettings {
+pub struct AudioDeviceData {
 	echo: bool
 }
 
-impl AudioDeviceSettings {
-	pub fn new() -> AudioDeviceSettings {
-		AudioDeviceSettings {
+impl AudioDeviceData {
+	pub fn new() -> AudioDeviceData {
+		AudioDeviceData {
 			echo: false
 		}
 	}
 }
 
-pub struct MidiDeviceSettings {
+pub struct MidiDeviceData {
 	start_transport_pending: bool,
 	stop_transport_pending: bool,
 	registry: MidiNoteRegistry,
 }
 
-impl MidiDeviceSettings {
-	pub fn new() -> MidiDeviceSettings {
-		MidiDeviceSettings {
+impl MidiDeviceData {
+	pub fn new() -> MidiDeviceData {
+		MidiDeviceData {
 			start_transport_pending: false,
 			stop_transport_pending: false,
 			registry: MidiNoteRegistry::new(),
@@ -77,8 +77,8 @@ impl MidiDeviceSettings {
 
 pub struct AudioThreadState<Driver: DriverTrait>
 {
-	devices: Vec<Option<(Driver::AudioDev, AudioDeviceSettings)>>,
-	mididevices: Vec<Option<(Driver::MidiDev, MidiDeviceSettings)>>,
+	devices: Vec<Option<(Driver::AudioDev, AudioDeviceData)>>,
+	mididevices: Vec<Option<(Driver::MidiDev, MidiDeviceData)>>,
 	metronome: AudioMetronome<Driver::AudioDev>,
 	midiclock: MidiClock<Driver::MidiDev>,
 	audiotakes: LinkedList<AudioTakeAdapter>,
@@ -125,8 +125,8 @@ impl<Driver: DriverTrait> AudioThreadState<Driver>
 		});
 
 		AudioThreadState {
-			devices: pad_option_vec(audiodevices.into_iter().map(|d| (d, AudioDeviceSettings::new())), 32),
-			mididevices: pad_option_vec(mididevices.into_iter().map(|d| (d, MidiDeviceSettings::new())), 32),
+			devices: pad_option_vec(audiodevices.into_iter().map(|d| (d, AudioDeviceData::new())), 32),
+			mididevices: pad_option_vec(mididevices.into_iter().map(|d| (d, MidiDeviceData::new())), 32),
 			metronome,
 			midiclock,
 			audiotakes: LinkedList::new(AudioTakeAdapter::new()),
@@ -193,7 +193,7 @@ impl<Driver: DriverTrait> AudioThreadState<Driver>
 								}
 							}
 							
-							let mut devtuple = device.map(|d| (d, AudioDeviceSettings::new()));
+							let mut devtuple = device.map(|d| (d, AudioDeviceData::new()));
 							std::mem::swap(&mut self.devices[id], &mut devtuple);
 							
 							if let Some((old, _)) = devtuple {
@@ -212,7 +212,7 @@ impl<Driver: DriverTrait> AudioThreadState<Driver>
 								}
 							}
 
-							let mut devtuple = device.map(|d| (d, MidiDeviceSettings::new()));
+							let mut devtuple = device.map(|d| (d, MidiDeviceData::new()));
 							std::mem::swap(&mut self.mididevices[id], &mut devtuple);
 
 							if let Some((old, _)) = devtuple {
