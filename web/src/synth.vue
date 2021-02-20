@@ -23,6 +23,7 @@ module.exports = {
 				}
 
 				json = await response.json();
+				json.selected = false;
 				console.log(json);
 				if (this.model.chains.find(x => x.id === json.id) === undefined) {
 					this.model.chains.push(json);
@@ -52,7 +53,7 @@ module.exports = {
 			<button v-on:click="add_chain_clicked">Add chain</button>
 		</div>
 		<div>
-			<chain v-for="chain in chains" v-bind:id="chain.id" v-bind:synthid="id" v-bind:midi="chain.midi" v-bind:name="chain.name" v-bind:takes="chain.takes" v-bind:model="chain" />
+			<chain v-for="chain in chains" v-bind:id="chain.id" v-bind:synthid="id" v-bind:midi="chain.midi" v-bind:name="chain.name" v-bind:takes="chain.takes" v-bind:model="chain" v-bind:selected="chain.selected" />
 		</div>
 	</div>
 </template>

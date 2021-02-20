@@ -13,6 +13,32 @@ Vue.component("bpm", bpm);
 
 var app2 = new Vue({
 	el: '#app',
+	created() {
+		window.addEventListener('keydown', (e) => {
+			var qwerty = ["KeyQ", "KeyW", "KeyE", "KeyR", "KeyT", "KeyY", "KeyU", "KeyI", "KeyO", "KeyP"]
+			var asdf = ["KeyA", "KeyS", "KeyD", "KeyF", "KeyG", "KeyH", "KeyJ", "KeyK", "KeyL", "KeyZ", "KeyX", "KeyC", "KeyV", "KeyB", "KeyN", "KeyM"];
+			if (e.srcElement.nodeName != "INPUT" && e.repeat == false) {
+				console.log(e);
+				var chain_index = qwerty.findIndex((x) => x == e.code);
+				var take_index = asdf.findIndex((x) => x == e.code);
+
+				var all_chains = this.synths.map((synth) => synth.chains).flat();
+				if (chain_index >= 0 && chain_index < all_chains.length) {
+					var chain = all_chains[chain_index];
+					var old = chain.selected;
+
+					if (!e.shiftKey) {
+						for (let chain of all_chains) {
+							chain.selected = false;
+						}
+					}
+
+					chain.selected = !old;
+					console.log(all_chains[chain_index].selected);
+				}
+			}
+		});
+	},
 	data: function(){ return{
 		playback_time: 0,
 		message: "Hello World",
@@ -269,6 +295,13 @@ function now() {
 async function init() {
 	var response = await fetch("http://localhost:8000/api/synths");
 	var json = await response.json();
+
+	for (let synth of json) {
+		for (let chain of synth.chains) {
+			chain.selected = false;
+		}
+	}
+
 	app2.synths = json;
 
 	var response2 = await fetch("http://localhost:8000/api/song");
@@ -328,20 +361,20 @@ async function mainloop()
 
 function apply_patch(patch) {
 	helper(
-		app2.synths, patch.synths, ["name"],
+		app2.synths, patch.synths, ["name"], {},
 		[
 			[
 				"chains",
-				["name", "midi", "audiomute", "midimute", "echo"],
+				["name", "midi", "audiomute", "midimute", "echo"], {'selected': false},
 				[
-					["takes", ["name", "type", "state", "associated_midi_takes", "muted", "muted_scheduled", "playing_since", "duration"], []]
+					["takes", ["name", "type", "state", "associated_midi_takes", "muted", "muted_scheduled", "playing_since", "duration"], {}, []]
 				]
 			]
 		]
 	);
 }
 
-function helper(array_to_patch, patch_array, props, arrayprops) {
+function helper(array_to_patch, patch_array, props, additional_props, arrayprops) {
 	for (let patch of patch_array) {
 		if (patch.delete === true) {
 			let index = array_to_patch.findIndex( x => x.id === patch.id );
@@ -369,11 +402,15 @@ function helper(array_to_patch, patch_array, props, arrayprops) {
 
 			for (let arrayprop of arrayprops) {
 				if (patch[arrayprop[0]] !== undefined) {
-					helper(object_to_patch[arrayprop[0]], patch[arrayprop[0]], arrayprop[1], arrayprop[2])
+					helper(object_to_patch[arrayprop[0]], patch[arrayprop[0]], arrayprop[1], arrayprop[2], arrayprop[3])
 				}
 			}
 
 			if (push) {
+				for (const [key, value] of Object.entries(additional_props)) {
+					object_to_patch[key] = value;
+				}
+
 				array_to_patch.push(object_to_patch);
 			}
 		}

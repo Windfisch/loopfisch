@@ -1,6 +1,6 @@
 <script>
 module.exports = {
-	props: ['name', 'takes', 'midi', 'id', 'synthid', 'model'],
+	props: ['name', 'takes', 'midi', 'id', 'synthid', 'model', 'selected'],
 	methods: {
 		async new_take(type) {
 			var post = await fetch(
@@ -174,7 +174,7 @@ module.exports = {
 </script>
 
 <template>
-		<div class="chainbox">
+		<div class="chainbox" :class="{ 'selected': selected == true }">
 			<div class="header">
 				<h1>{{name}}</h1>
 				<div style="flex-grow: 2"></div>
