@@ -14,6 +14,9 @@ Vue.component("bpm", bpm);
 var app2 = new Vue({
 	el: '#app',
 	created() {
+		window.addEventListener('keyup', (e) => {
+			this.pressed_keys.delete(e.code);
+		});
 		window.addEventListener('keydown', (e) => {
 			var qwerty = ["KeyQ", "KeyW", "KeyE", "KeyR", "KeyT", "KeyY", "KeyU", "KeyI", "KeyO", "KeyP"]
 			var asdf = ["KeyA", "KeyS", "KeyD", "KeyF", "KeyG", "KeyH", "KeyJ", "KeyK", "KeyL", "KeyZ", "KeyX", "KeyC", "KeyV", "KeyB", "KeyN", "KeyM"];
@@ -21,13 +24,16 @@ var app2 = new Vue({
 				console.log(e);
 				var chain_index = qwerty.findIndex((x) => x == e.code);
 				var take_index = asdf.findIndex((x) => x == e.code);
+				if (chain_index != -1 || take_index != -1) {
+					this.pressed_keys.add(e.code);
+				}
 
 				var all_chains = this.synths.map((synth) => synth.chains).flat();
 				if (chain_index >= 0 && chain_index < all_chains.length) {
 					var chain = all_chains[chain_index];
 					var old = chain.selected;
 
-					if (!e.shiftKey) {
+					if (!e.shiftKey && this.pressed_keys.size <= 1) {
 						for (let chain of all_chains) {
 							chain.selected = false;
 						}
@@ -44,7 +50,7 @@ var app2 = new Vue({
 						var take = (take_index < chain.takes.length) ? chain.takes[take_index] : null;
 						var old = take ? take.selected : null;
 
-						if (!e.shiftKey) {
+						if (!e.shiftKey && this.pressed_keys.size <= 1) {
 							for (var t of chain.takes) {
 								t.selected = false;
 							}
@@ -67,6 +73,7 @@ var app2 = new Vue({
 			beats:8,
 		},
 		user_id: "<not registered yet>",
+		pressed_keys: new Set(),
 		synths: [
 			{
 				name: "Deepmind 13",
