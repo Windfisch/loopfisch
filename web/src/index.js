@@ -11,11 +11,41 @@ Vue.component("chain", chain);
 Vue.component("synth", synth);
 Vue.component("bpm", bpm);
 
+// FIXME this function should not exist. this is an ugly hack around a design mistake.
+// start_recording etc should not be methods of the vue components, but top level functions.
+// or methods of the data objects.
+function component_with_model(root, model) {
+	if (root.model === model || root.reference === model) {
+		return root;
+	}
+	if (root.$children !== undefined) {
+		for (var child of root.$children) {
+			var temp = component_with_model(child, model);
+			if (temp !== undefined) {
+				return temp;
+			}
+		}
+	}
+	return undefined;
+}
+
+
 var app2 = new Vue({
 	el: '#app',
 	created() {
 		window.addEventListener('keyup', (e) => {
 			this.pressed_keys.delete(e.code);
+
+			console.log(this.pressed_keys.size);
+			console.log(this.keys_in_chord.size);
+			console.log(e.shiftKey);
+			console.log(this.deselect_on_1_chord);
+			if (this.pressed_keys.size == 0 && e.shiftKey == false && this.keys_in_chord.size == 1) {
+				for (var thing of this.deselect_on_1_chord) {
+					thing.selected = false;
+				}
+				this.deselect_on_1_chord.clear();
+			}
 		});
 		window.addEventListener('keydown', (e) => {
 			var qwerty = ["KeyQ", "KeyW", "KeyE", "KeyR", "KeyT", "KeyY", "KeyU", "KeyI", "KeyO", "KeyP"]
@@ -24,31 +54,62 @@ var app2 = new Vue({
 				console.log(e);
 				var chain_index = qwerty.findIndex((x) => x == e.code);
 				var take_index = asdf.findIndex((x) => x == e.code);
+
 				if (chain_index != -1 || take_index != -1) {
+					if (this.pressed_keys.size == 0 && !e.shiftKey) {
+						this.keys_in_chord.clear();
+						this.deselect_on_1_chord.clear();
+					}
+					this.keys_in_chord.add(e.code);
+					console.log("keys in chord: ", this.keys_in_chord);
+
 					this.pressed_keys.add(e.code);
 				}
 
 				var all_chains = this.synths.map((synth) => synth.chains).flat();
-				if (chain_index >= 0 && chain_index < all_chains.length) {
-					var chain = all_chains[chain_index];
-					var old = chain.selected;
+				if (chain_index >= 0) {
+					var chain = chain_index <= all_chains.length ? all_chains[chain_index] : null;
+
+					if (chain && this.keys_in_chord.size == 1 && chain.selected == true) {
+						var n_selected = all_chains.map((c) => c.selected ? 1 : 0).reduce((a,b)=>a+b, 0);
+						console.log(n_selected);
+						if (n_selected == 1) {
+							this.deselect_on_1_chord.add(chain);
+						}
+					}
 
 					if (!e.shiftKey && this.pressed_keys.size <= 1) {
 						for (let chain of all_chains) {
 							chain.selected = false;
 						}
 					}
-
-					chain.selected = !old;
-					console.log(all_chains[chain_index].selected);
+					
+					if (chain)
+					{
+						chain.selected = !chain.selected;
+						console.log(all_chains[chain_index].selected);
+					}
 				}
 
 				if (take_index >= 0) {
+					var n_selected_positions = new Set(
+							all_chains
+								.filter((c) => c.selected)
+								.map((c) => c.takes
+										.map((t, i) => [t.selected, i])
+										.filter((tuple) => tuple[0])
+								)
+								.flat()
+						).size;
+					console.log("n selected pos", n_selected_positions);
 					for (var chain of all_chains.filter((c) => c.selected)) {
 						console.log(chain);
 
 						var take = (take_index < chain.takes.length) ? chain.takes[take_index] : null;
-						var old = take ? take.selected : null;
+					
+						if (take && this.keys_in_chord.size == 1 && take.selected == true) {
+							this.deselect_on_1_chord.add(take);
+						}
 
 						if (!e.shiftKey && this.pressed_keys.size <= 1) {
 							for (var t of chain.takes) {
@@ -56,9 +117,30 @@ var app2 = new Vue({
 							}
 						}
 
-						if (take !== null) {
-							take.selected = !old;
+						if (take) {
+							take.selected = !take.selected;
 						}
+					}
+				}
+
+				if (e.key == "1") {
+					for (let chain of all_chains.filter((c) => c.selected)) {
+						component_with_model(this, chain).toggle_echo();
+					}
+				}
+				if (e.key == "2") {
+					for (let chain of all_chains.filter((c) => c.selected)) {
+						component_with_model(this, chain).showhidemidi();
+					}
+				}
+				if (e.key == "3") {
+					for (let chain of all_chains.filter((c) => c.selected)) {
+						component_with_model(this, chain).record_audio();
+					}
+				}
+				if (e.key == "4") {
+					for (let chain of all_chains.filter((c) => c.selected)) {
+						component_with_model(this, chain).record_midi();
 					}
 				}
 			}
@@ -74,6 +156,8 @@ var app2 = new Vue({
 		},
 		user_id: "<not registered yet>",
 		pressed_keys: new Set(),
+		keys_in_chord: new Set(),
+		deselect_on_1_chord: new Set(),
 		synths: [
 			{
 				name: "Deepmind 13",
