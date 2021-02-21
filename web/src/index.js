@@ -36,6 +36,25 @@ var app2 = new Vue({
 					chain.selected = !old;
 					console.log(all_chains[chain_index].selected);
 				}
+
+				if (take_index >= 0) {
+					for (var chain of all_chains.filter((c) => c.selected)) {
+						console.log(chain);
+
+						var take = (take_index < chain.takes.length) ? chain.takes[take_index] : null;
+						var old = take ? take.selected : null;
+
+						if (!e.shiftKey) {
+							for (var t of chain.takes) {
+								t.selected = false;
+							}
+						}
+
+						if (take !== null) {
+							take.selected = !old;
+						}
+					}
+				}
 			}
 		});
 	},
@@ -299,6 +318,9 @@ async function init() {
 	for (let synth of json) {
 		for (let chain of synth.chains) {
 			chain.selected = false;
+			for (let take of chain.takes) {
+				take.selected = false;
+			}
 		}
 	}
 
@@ -367,7 +389,7 @@ function apply_patch(patch) {
 				"chains",
 				["name", "midi", "audiomute", "midimute", "echo"], {'selected': false},
 				[
-					["takes", ["name", "type", "state", "associated_midi_takes", "muted", "muted_scheduled", "playing_since", "duration"], {}, []]
+					["takes", ["name", "type", "state", "associated_midi_takes", "muted", "muted_scheduled", "playing_since", "duration"], {'selected': false}, []]
 				]
 			]
 		]

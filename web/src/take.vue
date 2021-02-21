@@ -1,6 +1,6 @@
 <script>
 module.exports = {
-	props: ['name', 'audio', 'midi', 'play_progress', 'play_blinking', 'reference' ],
+	props: ['name', 'audio', 'midi', 'play_progress', 'play_blinking', 'reference', 'selected' ],
 	computed: {
 		midimute: function() {
 			if (this.reference.type == "Audio") {
@@ -45,7 +45,7 @@ module.exports = {
 </script>
 
 <template>
-			<div class="takebox" v-bind:style="audio ? '' : 'background-color: #ccf' ">
+			<div class="takebox" :class="{'miditake': !audio, 'audiotake': audio, 'selected': selected}" >
 				<div style="width:2em; margin: 0; padding:0; text-align:center">
 					<pie class="blinking" width='0.75em' value=1 v-if="reference.state=='Waiting'" v-bind:color="pie_color"></pie>
 					<pie width='0.75em' value=1 v-else-if="reference.state=='Recording'" v-bind:color="pie_color"></pie>

@@ -26,6 +26,7 @@ module.exports = {
 				}
 
 				json = await response.json();
+				json.selected = false;
 				console.log(json);
 				if (this.model.takes.find(x => x.id === json.id) === undefined) {
 					this.model.takes.push(json);
@@ -186,7 +187,7 @@ module.exports = {
 
 	
 			<div v-for="take in takes" v-bind:style="'overflow: hidden; margin-right: -0.5em; padding: 0; transition: max-height 125ms ease-out;' + ((show_midi || take.type==='Audio') ? 'max-height:2.5em' : 'max-height:0')">
-			<take v-bind:reference="take" v-on:toggle_audio="toggle_audio" v-on:toggle_midi="toggle_midi" v-bind:name="take.name" v-bind:audio="take.type==='Audio'" v-bind:midi="midi"></take>
+			<take v-bind:reference="take" v-on:toggle_audio="toggle_audio" v-on:toggle_midi="toggle_midi" v-bind:name="take.name" v-bind:audio="take.type==='Audio'" v-bind:midi="midi" v-bind:selected="take.selected"></take>
 			</div>
 		</div>
 </template>
