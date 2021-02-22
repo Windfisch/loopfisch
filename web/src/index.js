@@ -4,6 +4,7 @@ import chain from './chain.vue';
 import synth from './synth.vue';
 import bpm from './bpm.vue';
 import Vue from 'vue';
+import {TakeModel, ChainModel, SynthModel, patch_array} from './model.js';
 
 Vue.component('pie', pie);
 Vue.component("take", take);
@@ -146,7 +147,7 @@ var app2 = new Vue({
 			}
 		});
 	},
-	data: function(){ return{
+	data: function() { return{
 		playback_time: 0,
 		message: "Hello World",
 		count: 0,
@@ -158,179 +159,7 @@ var app2 = new Vue({
 		pressed_keys: new Set(),
 		keys_in_chord: new Set(),
 		deselect_on_1_chord: new Set(),
-		synths: [
-			{
-				name: "Deepmind 13",
-				id: 0,
-				chains: [
-					{
-						name: "Pad",
-						midi: true,
-						echo: false,
-						takes: [
-							{
-								id: 0,
-								name: "Flausch",
-								type: "Audio",
-								audiomute: true,
-								midimute: true,
-								associated_midi_takes: [1]
-							},
-							{
-								id: 3,
-								name: "gefiltertes Flausch",
-								type: "Audio",
-								audiomute: false,
-								midimute: true,
-								associated_midi_takes: [1,2]
-							},
-							{
-								id: 1,
-								name: "Flausch (MIDI)",
-								type: "Midi",
-								audiomute: false,
-								midimute: true
-							},
-							{
-								id: 2,
-								name: "Filter controller",
-								type: "Midi",
-								audiomute: false,
-								midimute: true
-							},
-						]
-					},
-					{
-						name: "Lead",
-						midi: true,
-						echo: false,
-						takes: [
-							{
-								id: 0,
-								name: "Lead",
-								type: "Audio",
-								audiomute: true,
-								midimute: true
-							}
-						]
-					},
-					{
-						name: "Bass",
-						midi: true,
-						echo: false,
-						takes: [
-							{
-								id: 0,
-								name: "Intro",
-								type: "Audio",
-								audiomute: true,
-								midimute: true,
-								associated_midi_takes: [2,3]
-							},
-							{
-								id: 1,
-								name: "Main line",
-								type: "Audio",
-								audiomute: false,
-								midimute: true,
-								associated_midi_takes: [3,4,5]
-							},
-							{
-								id: 2,
-								name: "Intro (MIDI)",
-								type: "Midi",
-								audiomute: false,
-								midimute: true
-							},
-							{
-								id: 3,
-								name: "Filter",
-								type: "Midi",
-								audiomute: false,
-								midimute: true
-							},
-							{
-								id: 4,
-								name: "Main line (MIDI)",
-								type: "Midi",
-								audiomute: false,
-								midimute: true
-							},
-							{
-								id: 5,
-								name: "Envelope decay",
-								type: "Midi",
-								audiomute: false,
-								midimute: true
-							},
-						]
-					}
-				]
-			},
-			{
-				name: "Weird MIDI-Only thingy",
-				chains: [
-					{
-						name: "Something",
-						midi: true,
-						echo: false,
-						takes: [
-							{
-								id: 0,
-								name: "Some take",
-								type: "Midi",
-								audiomute: false,
-								midimute: true,
-								associated_midi_takes: []
-							},
-						]
-					}
-				]
-			},
-			{
-				name: "Guitar",
-				chains: [
-					{
-						name: "Distorted",
-						midi: false,
-						echo: false,
-						takes: [
-							{
-								id: 0,
-								name: "Rhythm Djents",
-								type: "Audio",
-								audiomute: false,
-								midimute: true,
-								associated_midi_takes: []
-							},
-							{
-								id: 1,
-								name: "Rhythm Djents 2",
-								type: "Audio",
-								audiomute: false,
-								midimute: true,
-								associated_midi_takes: []
-							},
-						]
-					},
-					{
-						name: "Clean",
-						midi: false,
-						echo: false,
-						takes: [
-							{
-								id: 0,
-								name: "Solo",
-								type: "Audio",
-								audiomute: false,
-								midimute: true,
-								associated_midi_takes: []
-							},
-						]
-					}
-				]
-			}
-		]
+		synths: []
 	}},
 	methods: {
 		async bpm_beats_changed() {
@@ -359,7 +188,7 @@ var app2 = new Vue({
 				})
 			});
 			if (post.status == 201) {
-				path = post.headers.get('Location');
+				var path = post.headers.get('Location');
 				console.log(path);
 
 				var response = await fetch("http://localhost:8000"+path);
@@ -368,10 +197,10 @@ var app2 = new Vue({
 					return;
 				}
 
-				json = await response.json();
+				var json = await response.json();
 				console.log(json);
 				if (this.synths.find(x => x.id === json.id) === undefined) {
-					this.synths.push(json);
+					this.synths.push(new SynthModel(json));
 				}
 			}
 			else {
@@ -392,6 +221,8 @@ var app2 = new Vue({
 	}
 })
 
+window.app = app2
+
 async function async_main() {
 	await init();
 	timeloop();
@@ -405,17 +236,7 @@ function now() {
 async function init() {
 	var response = await fetch("http://localhost:8000/api/synths");
 	var json = await response.json();
-
-	for (let synth of json) {
-		for (let chain of synth.chains) {
-			chain.selected = false;
-			for (let take of chain.takes) {
-				take.selected = false;
-			}
-		}
-	}
-
-	app2.synths = json;
+	app2.synths = json.map(synth => new SynthModel(synth));
 
 	var response2 = await fetch("http://localhost:8000/api/song");
 	var song = await response2.json();
@@ -447,7 +268,7 @@ async function mainloop()
 				next_update_id = Math.max(next_update_id, update.id + 1);
 				if (update.action.synths !== undefined) {
 					try {
-						apply_patch(update.action);
+						patch_array(app2.synths, update.action.synths, SynthModel);
 					}
 					catch (e) {
 						console.log("Error while applying update")
@@ -470,65 +291,6 @@ async function mainloop()
 			}
 		}
 	}
-}
-
-function apply_patch(patch) {
-	helper(
-		app2.synths, patch.synths, ["name"], {},
-		[
-			[
-				"chains",
-				["name", "midi", "audiomute", "midimute", "echo"], {'selected': false},
-				[
-					["takes", ["name", "type", "state", "associated_midi_takes", "muted", "muted_scheduled", "playing_since", "duration"], {'selected': false}, []]
-				]
-			]
-		]
-	);
-}
-
-function helper(array_to_patch, patch_array, props, additional_props, arrayprops) {
-	for (let patch of patch_array) {
-		if (patch.delete === true) {
-			let index = array_to_patch.findIndex( x => x.id === patch.id );
-			if (index != -1) {
-				array_to_patch.splice(index, 1);
-			}
-		}
-		else
-		{
-			let object_to_patch = array_to_patch.find( x => x.id === patch.id );
-			let push = false;
-			if (object_to_patch === undefined) {
-				push = true;
-				object_to_patch = { id: patch.id, created_by_patch: true };
-				for (let arrayprop of arrayprops) {
-					object_to_patch[arrayprop[0]] = [];
-				}
-			}
-
-			for (let prop of props) {
-				if (patch[prop] !== undefined) {
-					object_to_patch[prop] = patch[prop];
-				}
-			}
-
-			for (let arrayprop of arrayprops) {
-				if (patch[arrayprop[0]] !== undefined) {
-					helper(object_to_patch[arrayprop[0]], patch[arrayprop[0]], arrayprop[1], arrayprop[2], arrayprop[3])
-				}
-			}
-
-			if (push) {
-				for (const [key, value] of Object.entries(additional_props)) {
-					object_to_patch[key] = value;
-				}
-
-				array_to_patch.push(object_to_patch);
-			}
-		}
-	}
-
 }
 
 async_main();

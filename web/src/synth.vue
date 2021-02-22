@@ -1,8 +1,9 @@
 <script>
-module.exports = {
+import {ChainModel} from './model.js';
+export default {
 	props: ['name', 'chains', 'id', 'model'],
 	methods: {
-		async add_chain_clicked() {
+		async add_chain_clicked() { // FIXME this should be a method of SynthModel
 			var post = await fetch("http://localhost:8000/api/synths/" + this.id + "/chains", {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
@@ -13,7 +14,7 @@ module.exports = {
 				})
 			});
 			if (post.status == 201) {
-				path = post.headers.get('Location');
+				var path = post.headers.get('Location');
 				console.log(path);
 
 				var response = await fetch("http://localhost:8000"+path);
@@ -22,11 +23,11 @@ module.exports = {
 					return;
 				}
 
-				json = await response.json();
-				json.selected = false;
+				var json = await response.json();
 				console.log(json);
+				console.log(ChainModel);
 				if (this.model.chains.find(x => x.id === json.id) === undefined) {
-					this.model.chains.push(json);
+					this.model.chains.push(new ChainModel(json));
 				}
 			}
 			else {

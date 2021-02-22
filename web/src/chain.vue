@@ -1,8 +1,9 @@
 <script>
-module.exports = {
+import {TakeModel} from './model.js';
+export default {
 	props: ['name', 'takes', 'midi', 'id', 'synthid', 'model', 'selected'],
 	methods: {
-		async new_take(type) {
+		async new_take(type) { // FIXME these should be methods of ChainModel
 			var post = await fetch(
 				"http://localhost:8000/api/synths/" + this.synthid
 				+ "/chains/" + this.id + "/takes", {
@@ -26,10 +27,9 @@ module.exports = {
 				}
 
 				json = await response.json();
-				json.selected = false;
 				console.log(json);
 				if (this.model.takes.find(x => x.id === json.id) === undefined) {
-					this.model.takes.push(json);
+					this.model.takes.push(new TakeModel(json));
 				}
 			}
 			else {

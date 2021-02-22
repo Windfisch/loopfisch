@@ -1,5 +1,5 @@
 <script>
-module.exports = {
+export default {
 	props: ['name', 'audio', 'midi', 'play_progress', 'play_blinking', 'reference', 'selected' ],
 	computed: {
 		midimute: function() {
