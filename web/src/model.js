@@ -300,4 +300,34 @@ export function patch_array(array_to_patch, patches, clazz, parent_object) {
 	}
 }
 
+export async function add_synth(synth_array) {
+	var post = await fetch("http://localhost:8000/api/synths", {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		redirect: 'follow',
+		mode: 'cors',
+		body: JSON.stringify({
+			"name": "New Synth"
+		})
+	});
+	if (post.status == 201) {
+		var path = post.headers.get('Location');
+		console.log(path);
+
+		var response = await fetch("http://localhost:8000"+path);
+		if (response.status !== 200) {
+			console.log("whoopsie :o");
+			return;
+		}
+
+		var json = await response.json();
+		console.log(json);
+		if (synth_array.find(x => x.id === json.id) === undefined) {
+			synth_array.push(new SynthModel(json));
+		}
+	}
+	else {
+		alert("Failed to create synth!");
+	}
+}
 

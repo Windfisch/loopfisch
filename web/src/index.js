@@ -4,7 +4,7 @@ import chain from './chain.vue';
 import synth from './synth.vue';
 import bpm from './bpm.vue';
 import Vue from 'vue';
-import {TakeModel, ChainModel, SynthModel, patch_array} from './model.js';
+import {TakeModel, ChainModel, SynthModel, patch_array, add_synth} from './model.js';
 
 Vue.component('pie', pie);
 Vue.component("take", take);
@@ -178,34 +178,7 @@ var app2 = new Vue({
 			});
 		},
 		async add_synth_clicked() {
-			var post = await fetch("http://localhost:8000/api/synths", {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				redirect: 'follow',
-				mode: 'cors',
-				body: JSON.stringify({
-					"name": "New Synth"
-				})
-			});
-			if (post.status == 201) {
-				var path = post.headers.get('Location');
-				console.log(path);
-
-				var response = await fetch("http://localhost:8000"+path);
-				if (response.status !== 200) {
-					console.log("whoopsie :o");
-					return;
-				}
-
-				var json = await response.json();
-				console.log(json);
-				if (this.synths.find(x => x.id === json.id) === undefined) {
-					this.synths.push(new SynthModel(json));
-				}
-			}
-			else {
-				alert("Failed to create synth!");
-			}
+			add_synth(this.synths);
 		}
 	},
 	computed: {
