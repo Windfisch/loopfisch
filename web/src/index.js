@@ -126,22 +126,22 @@ var app2 = new Vue({
 
 				if (e.key == "1") {
 					for (let chain of all_chains.filter((c) => c.selected)) {
-						component_with_model(this, chain).toggle_echo();
+						chain.set_echo(!chain.echo);
 					}
 				}
 				if (e.key == "2") {
 					for (let chain of all_chains.filter((c) => c.selected)) {
-						component_with_model(this, chain).showhidemidi();
+						component_with_model(this, chain).showhidemidi(); // FIXME TODO: maybe this property should be moved into the model as well.
 					}
 				}
 				if (e.key == "3") {
 					for (let chain of all_chains.filter((c) => c.selected)) {
-						component_with_model(this, chain).record_audio();
+						chain.toggle_record_audio();
 					}
 				}
 				if (e.key == "4") {
 					for (let chain of all_chains.filter((c) => c.selected)) {
-						component_with_model(this, chain).record_midi();
+						chain.toggle_record_midi();
 					}
 				}
 			}
