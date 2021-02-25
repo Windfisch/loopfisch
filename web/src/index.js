@@ -144,6 +144,20 @@ var app2 = new Vue({
 						chain.toggle_record_midi();
 					}
 				}
+				if (e.key == "9") {
+					for (let chain of all_chains.filter((c) => c.selected)) {
+						for (let take of chain.takes.filter(t => t.selected)) {
+							chain.set_take_audiomute(take, !chain.get_take_audiomute(take));
+						}
+					}
+				}
+				if (e.key == "0") {
+					for (let chain of all_chains.filter((c) => c.selected)) {
+						for (let take of chain.takes.filter(t => t.selected)) {
+							chain.set_take_midimute(take, !chain.get_take_midimute(take));
+						}
+					}
+				}
 			}
 		});
 	},
