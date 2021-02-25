@@ -268,7 +268,7 @@ async function mainloop()
 				next_update_id = Math.max(next_update_id, update.id + 1);
 				if (update.action.synths !== undefined) {
 					try {
-						patch_array(app2.synths, update.action.synths, SynthModel);
+						patch_array(app2.synths, update.action.synths, SynthModel, null);
 					}
 					catch (e) {
 						console.log("Error while applying update")
