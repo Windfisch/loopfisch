@@ -1,6 +1,6 @@
 <script>
 export default {
-	props: ['name', 'audio', 'midi', 'play_progress', 'play_blinking', 'model', 'selected' ],
+	props: ['name', 'audio', 'midi', 'play_progress', 'play_blinking', 'model', 'selected', 'index_in_chain'],
 	computed: {
 		midimute: function() {
 			return this.model.parent_chain.get_take_midimute(this.model);
@@ -21,6 +21,9 @@ export default {
 			else {
 				return "white";
 			}
+		},
+		letter: function () {
+			return "asdfghjkl"[this.index_in_chain];
 		}
 	},
 	methods: {
@@ -41,7 +44,7 @@ export default {
 					<pie width='0.75em' value=1 v-else-if="model.state=='Recording'" v-bind:color="pie_color"></pie>
 					<pie width='1.5em' v-bind:value="playback_progress" v-else v-bind:color="pie_color"></pie>
 				</div>
-				<div>{{name}} ({{model.id}}), {{model.state}}</div>
+				<div><div style='display:inline-block; background-color: #333; color: white; width: 1.2em; text-align: center; font-family: monospace'>{{letter}}</div> {{name}}</div>
 				<div style="flex-grow: 2"></div>
 				<img v-on:click="toggle_audio" v-if="audio" v-bind:src="'audio2' + (audiomute ? 'g' : '') + '.svg'" style="height: 75%" />
 				<img v-on:click="toggle_midi" v-if="midi" v-bind:src="'midi2' + (midimute ? 'g' : '') + '.svg'" style="height: 75%" />
