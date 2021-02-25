@@ -42,7 +42,7 @@ export default {
 			</div>
 
 			<div v-for="take in takes" v-bind:style="'overflow: hidden; margin-right: -0.5em; padding: 0; transition: max-height 125ms ease-out;' + ((show_midi || take.type==='Audio') ? 'max-height:2.5em' : 'max-height:0')">
-			<take v-bind:reference="take" v-on:toggle_audio="toggle_audiomute(take)" v-on:toggle_midi="toggle_midimute(take)" v-bind:name="take.name" v-bind:audio="take.type==='Audio'" v-bind:midi="midi" v-bind:selected="take.selected"></take>
+			<take v-bind:model="take" v-on:toggle_audio="toggle_audiomute(take)" v-on:toggle_midi="toggle_midimute(take)" v-bind:name="take.name" v-bind:audio="take.type==='Audio'" v-bind:midi="midi" v-bind:selected="take.selected"></take>
 			</div>
 		</div>
 </template>

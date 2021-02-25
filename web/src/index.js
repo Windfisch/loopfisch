@@ -16,7 +16,7 @@ Vue.component("bpm", bpm);
 // start_recording etc should not be methods of the vue components, but top level functions.
 // or methods of the data objects.
 function component_with_model(root, model) {
-	if (root.model === model || root.reference === model) {
+	if (root.model === model || root.model === model) {
 		return root;
 	}
 	if (root.$children !== undefined) {
