@@ -2,13 +2,18 @@
 import {ChainModel} from './model.js';
 export default {
 	props: ['name', 'chains', 'id', 'model'],
+	methods: {
+		change_name(name) {
+			this.model.update_name(name);
+		}
+	}
 }
 </script>
 
 <template>
 	<div class="synthbox">
 		<div class="header">
-			<h1>{{name}} ({{id}})</h1>
+			<h1 style="width:100%"><editlabel :value="name" v-on:input="change_name"/></h1>
 			<div style="flex-grow: 2"></div>
 			<button v-on:click="model.restart_transport()">Restart transport</button>
 			<button v-on:click="model.add_chain()">Add chain</button>

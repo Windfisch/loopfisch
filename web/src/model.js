@@ -16,6 +16,25 @@ export class TakeModel {
 	patch(data) {
 		copy_existing_properties(this, data, ['name', 'type', 'state', 'muted', 'muted_scheduled', 'associated_midi_takes', 'playing_since', 'duration']);
 	}
+
+	async update_name(new_name) {
+		if (new_name != this.name)
+		{
+			var patch = {
+				'id': this.id,
+				'name': new_name,
+			}
+			var req = await fetch(
+				"http://localhost:8000/api/synths/" + this.parent_chain.parent_synth.id + "/chains/" + this.parent_chain.id + "/takes/" + this.id, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				redirect: 'follow',
+				mode: 'cors',
+				body: JSON.stringify(patch)
+			});
+			this.name = new_name;
+		}
+	}
 }
 
 export class ChainModel {
@@ -29,6 +48,25 @@ export class ChainModel {
 	patch(data) {
 		copy_existing_properties(this, data, ['name', 'midi', 'echo']);
 		patch_array(this.takes, data.takes, TakeModel, this);
+	}
+
+	async update_name(new_name) {
+		if (new_name != this.name)
+		{
+			var patch = {
+				'id': this.id,
+				'name': new_name,
+			}
+			var req = await fetch(
+				"http://localhost:8000/api/synths/" + this.parent_synth.id + "/chains/" + this.id, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				redirect: 'follow',
+				mode: 'cors',
+				body: JSON.stringify(patch)
+			});
+			this.name = new_name;
+		}
 	}
 
 	async new_take(type) {
@@ -255,6 +293,25 @@ export class SynthModel {
 			redirect: 'follow',
 			mode: 'cors'
 		});
+	}
+
+	async update_name(new_name) {
+		if (new_name != this.name)
+		{
+			var patch = {
+				'id': this.id,
+				'name': new_name,
+			}
+			var req = await fetch(
+				"http://localhost:8000/api/synths/" + this.id, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				redirect: 'follow',
+				mode: 'cors',
+				body: JSON.stringify(patch)
+			});
+			this.name = new_name;
+		}
 	}
 }
 

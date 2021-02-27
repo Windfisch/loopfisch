@@ -3,6 +3,7 @@ import take from './take.vue';
 import chain from './chain.vue';
 import synth from './synth.vue';
 import bpm from './bpm.vue';
+import editlabel from './editlabel.vue';
 import Vue from 'vue';
 import {TakeModel, ChainModel, SynthModel, patch_array, add_synth} from './model.js';
 
@@ -11,6 +12,7 @@ Vue.component("take", take);
 Vue.component("chain", chain);
 Vue.component("synth", synth);
 Vue.component("bpm", bpm);
+Vue.component("editlabel", editlabel);
 
 // FIXME this function should not exist. this is an ugly hack around a design mistake.
 // start_recording etc should not be methods of the vue components, but top level functions.

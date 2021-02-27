@@ -20,6 +20,9 @@ export default {
 		},
 		toggle_midimute(take) {
 			this.model.set_take_midimute(take, !this.model.get_take_midimute(take));
+		},
+		change_name(new_name) {
+			this.model.update_name(new_name);
 		}
 	},
 	computed: {
@@ -38,8 +41,10 @@ export default {
 <template>
 		<div class="chainbox" :class="{ 'selected': selected == true }">
 			<div class="header">
-				<h1><div style='display:inline-block; background-color: #333; color: white; width: 1.2em; text-align: center; font-family: monospace'>{{letter}}</div> {{name}}</h1>
-				<div style="flex-grow: 2"></div>
+				<h1 style="width:100%;">
+					<div style='display:inline-block; background-color: #333; color: white; width: 1.2em; text-align: center; font-family: monospace'>{{letter}}</div>
+					<editlabel :value="name" v-on:input="change_name"/>
+				</h1>
 				<button v-bind:style="'background-color: ' + (model.echo ? 'lightpink;' : 'white;')" v-on:click="model.set_echo(!model.echo)">echo</button>
 				<button v-if="needs_show_midi_button()" v-on:click="showhidemidi">{{ show_midi ? 'hide midi' : 'show midi' }}</button>
 				<button v-on:click="model.toggle_record_audio()">{{ model.has_recording_takes() ? "stop rec" : "rec audio" }}</button>
