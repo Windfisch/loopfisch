@@ -197,6 +197,7 @@ impl<Driver: DriverTrait> AudioThreadState<Driver>
 							std::mem::swap(&mut self.devices[id], &mut devtuple);
 							
 							if let Some((old, _)) = devtuple {
+								#[cfg(feature = "debug_print_in_audio_thread")]
 								println!("submitting deconstruction request");
 								if self.destructor_channel.push(DestructionRequest::AudioDevice(old)).is_err() {
 									panic!("Failed to submit deconstruction request");
@@ -216,6 +217,7 @@ impl<Driver: DriverTrait> AudioThreadState<Driver>
 							std::mem::swap(&mut self.mididevices[id], &mut devtuple);
 
 							if let Some((old, _)) = devtuple {
+								#[cfg(feature = "debug_print_in_audio_thread")]
 								println!("submitting deconstruction request");
 								if self.destructor_channel.push(DestructionRequest::MidiDevice(old)).is_err() {
 									panic!("Failed to submit deconstruction request");
@@ -231,10 +233,15 @@ impl<Driver: DriverTrait> AudioThreadState<Driver>
 							self.mididevices[id].as_mut().unwrap().1.stop_transport_pending = true;
 						}
 						Message::NewAudioTake(take) => {
+							#[cfg(feature = "debug_print_in_audio_thread")]
 							println!("\ngot take");
 							self.audiotakes.push_back(take);
 						}
-						Message::NewMidiTake(take) => { println!("\ngot miditake"); self.miditakes.push_back(take); }
+						Message::NewMidiTake(take) => {
+							#[cfg(feature = "debug_print_in_audio_thread")]
+							println!("\ngot miditake");
+							self.miditakes.push_back(take);
+						}
 						Message::FinishAudioTake(id, length) => {
 							for_take!(&mut self.audiotakes, id, t -> {
 								t.length = Some(length);
@@ -348,6 +355,7 @@ impl<Driver: DriverTrait> AudioThreadState<Driver>
 
 				if let Some(length) = t.length {
 					if t.recorded_length >= length {
+						#[cfg(feature = "debug_print_in_audio_thread")]
 						println!("\nFinished recording on device {}", t.audiodev_id);
 						self.event_channel.send_or_complain(Event::AudioTakeStateChanged(t.audiodev_id, t.id, RecordState::Finished, t.started_recording_at + length));
 						t.record_state = Finished;
@@ -356,6 +364,7 @@ impl<Driver: DriverTrait> AudioThreadState<Driver>
 			}
 			else if t.record_state == Waiting {
 				if song_wraps {
+					#[cfg(feature = "debug_print_in_audio_thread")]
 					println!("\nStarted recording on device {}", t.audiodev_id);
 					self.event_channel.send_or_complain(Event::AudioTakeStateChanged(t.audiodev_id, t.id, RecordState::Recording, self.transport_position + song_wraps_at));
 					t.record_state = Recording;
@@ -386,6 +395,7 @@ impl<Driver: DriverTrait> AudioThreadState<Driver>
 
 				if let Some(length) = t.length {
 					if t.recorded_length >= length {
+						#[cfg(feature = "debug_print_in_audio_thread")]
 						println!("\nFinished recording on device {}", t.mididev_id);
 						self.event_channel.send_or_complain(Event::MidiTakeStateChanged(t.mididev_id, t.id, RecordState::Finished, t.started_recording_at + length));
 						t.record_state = Finished;
@@ -394,6 +404,7 @@ impl<Driver: DriverTrait> AudioThreadState<Driver>
 			}
 			else if t.record_state == Waiting {
 				if song_wraps {
+					#[cfg(feature = "debug_print_in_audio_thread")]
 					println!("\nStarted recording on device {}", t.mididev_id);
 					self.event_channel.send_or_complain(Event::MidiTakeStateChanged(t.mididev_id, t.id, RecordState::Recording, self.transport_position + song_wraps_at));
 					t.record_state = Recording;

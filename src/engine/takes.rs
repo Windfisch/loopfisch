@@ -227,6 +227,7 @@ impl MidiTake {
 
 					if last_timestamp_before_loop < self.playback_position + range.len() as u32 {
 						// rewind only when the song actually passes the take length
+						#[cfg(feature = "debug_print_in_audio_thread")]
 						println!("MIDI REWIND");
 						self.events.rewind();
 
@@ -307,6 +308,7 @@ impl MidiTake {
 			if range.contains(&event.time()) {
 				if event.bytes().len() != 3 {
 					// FIXME
+					#[cfg(feature = "debug_print_in_audio_thread")]
 					println!("ignoring event with length != 3");
 				}
 				else {
