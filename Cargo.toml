@@ -27,3 +27,6 @@ stable_deref_trait = "1.0.0"
 
 [patch.crates-io]
 rocket = {git="https://github.com/SergioBenitez/Rocket", branch="master"}
+
+[features]
+debug_print_in_audio_thread = ["assert_no_alloc/warn_debug"]
